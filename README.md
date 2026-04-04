@@ -12,13 +12,14 @@ brew install Portfoligno/idris/idris2-pack
 
 ## Post-install
 
-Initialize pack and install a managed Idris2 compiler:
+The formula includes a bundled Idris2 compiler. You can use pack immediately:
 
 ```sh
-pack switch latest
+pack build
+pack install <package>
 ```
 
-Add pack's wrapper scripts to your PATH:
+Pack installs executables to `$HOME/.local/bin` by default. Add it to your PATH:
 
 ```sh
 export PATH="$HOME/.local/bin:$PATH"
