@@ -28,48 +28,21 @@ def build_resource_blocks(libraries: list[dict]) -> str:
     return "\n\n".join(blocks)
 
 
-def build_library_install_loop(libraries: list[dict]) -> str:
-    """Generate the Ruby loop that installs simple (non-ilex) libraries."""
-    # ilex is handled separately in the template due to sub-package structure
-    names = [lib["name"] for lib in libraries if lib["name"] != "idris2-ilex"]
-
-    # Wrap the %w[] array to stay within Homebrew's 118-char line limit.
-    # Continuation lines align after "%w[" (7 spaces of indent).
-    prefix = "    %w["
-    suffix = "].each do |lib_name|"
-    continuation_indent = " " * len(prefix)
-    max_line_len = 118
-
-    lines = []
-    current_line = prefix
-    for i, name in enumerate(names):
-        candidate = current_line + name
-        # Check if adding suffix (for last name) or next name would exceed limit
-        if i == len(names) - 1:
-            # Last name: must fit with suffix
-            if len(candidate + suffix) <= max_line_len:
-                lines.append(candidate + suffix)
-            else:
-                lines.append(current_line.rstrip())
-                lines.append(continuation_indent + name + suffix)
-        else:
-            # Not last: check if next name would still fit on this line
-            if len(candidate + " ") <= max_line_len:
-                current_line = candidate + " "
-            else:
-                lines.append(current_line.rstrip())
-                current_line = continuation_indent + name + " "
-
-    array_line = "\n".join(lines)
-    return (
-        f"{array_line}\n"
-        "      resource(lib_name).stage do\n"
-        '        Dir.glob("*.ipkg").each do |ipkg|\n'
-        '          system idris2_bin, "--install", ipkg\n'
-        "        end\n"
-        "      end\n"
-        "    end"
-    )
+def build_library_install_blocks(libraries: list[dict]) -> str:
+    """Generate per-resource install blocks with explicit .ipkg paths."""
+    blocks = []
+    for lib in libraries:
+        steps = lib["install_steps"]
+        install_lines = "\n".join(
+            f'      system idris2_bin, "--install", "{step}"' for step in steps
+        )
+        block = (
+            f'    resource("{lib["name"]}").stage do\n'
+            f"{install_lines}\n"
+            f"    end"
+        )
+        blocks.append(block)
+    return "\n\n".join(blocks)
 
 
 def main() -> None:
@@ -98,7 +71,7 @@ def main() -> None:
     formula = formula.replace("{{IDRIS2_SHA256}}", idris2["sha256"])
     formula = formula.replace("{{RESOURCE_BLOCKS}}", build_resource_blocks(libraries))
     formula = formula.replace(
-        "{{LIBRARY_INSTALL_LOOP}}", build_library_install_loop(libraries)
+        "{{LIBRARY_INSTALL_BLOCKS}}", build_library_install_blocks(libraries)
     )
 
     with open(args.output, "w") as f:

@@ -27,10 +27,9 @@ Strategy B: self-contained build from source. The formula bootstraps its own Idr
 Build steps:
 1. Bootstrap Idris2 from Chez Scheme (`make bootstrap`)
 2. Install Idris2 with source libraries and API
-3. Build 9 simple library dependencies in order
-4. Build ilex sub-packages in dependency order (`ilex-core` → `ilex` → `ilex-toml`)
-5. Build pack itself
-6. Install into `libexec/` with a wrapper script in `bin/`
+3. Install library dependencies via explicit per-resource `.ipkg` paths (resolved at generation time)
+4. Build pack itself
+5. Install into `libexec/` with a wrapper script in `bin/`
 
 The `libexec/` layout isolates the toolchain from the user's PATH. Only the `pack` wrapper is public.
 
@@ -41,11 +40,11 @@ A Ruby file with `{{PLACEHOLDER}}` markers, filled by `generate-formula.py`. Pla
 - `{{PACK_COMMIT}}`, `{{PACK_SHA256}}` — pack source archive
 - `{{IDRIS2_COMMIT}}`, `{{IDRIS2_SHA256}}` — Idris2 source archive
 - `{{RESOURCE_BLOCKS}}` — Ruby `resource` blocks for all libraries
-- `{{LIBRARY_INSTALL_LOOP}}` — Ruby loop installing libraries in order
+- `{{LIBRARY_INSTALL_BLOCKS}}` — Per-resource `stage` blocks with explicit `.ipkg` install paths
 
 ### Scripts
 
-**`resolve-collection.py`** — Parses a pack-db TOML, extracts commits for pack, Idris2, and 10 libraries, downloads each source archive to compute SHA256, outputs `resources.json`.
+**`resolve-collection.py`** — Parses a pack-db TOML, extracts commits for pack, Idris2, and 10 libraries, downloads each source archive to compute SHA256, inspects `.ipkg` files within each archive to determine install order, and outputs `resources.json` with per-resource `install_steps`.
 
 **`generate-formula.py`** — Fills the template with data from `resources.json` and a version string, writes the final formula.
 

@@ -51,14 +51,7 @@ class Idris2Pack < Formula
     pkg_path = "#{idris2_prefix}/idris2-#{idris2_version}"
     ENV["IDRIS2_PACKAGE_PATH"] = pkg_path
 
-{{LIBRARY_INSTALL_LOOP}}
-
-    # ilex has sub-packages in subdirectories; install in dependency order
-    resource("idris2-ilex").stage do
-      system idris2_bin, "--install", "core/ilex-core.ipkg"
-      system idris2_bin, "--install", "ilex.ipkg"
-      system idris2_bin, "--install", "toml/ilex-toml.ipkg"
-    end
+{{LIBRARY_INSTALL_BLOCKS}}
 
     # Step 3: Build pack
     system idris2_bin, "--build", "pack.ipkg"

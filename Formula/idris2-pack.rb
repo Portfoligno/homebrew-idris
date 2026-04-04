@@ -96,21 +96,49 @@ class Idris2Pack < Formula
     pkg_path = "#{idris2_prefix}/idris2-#{idris2_version}"
     ENV["IDRIS2_PACKAGE_PATH"] = pkg_path
 
-    %w[idris2-algebra idris2-ref1 idris2-array idris2-bytestring
-       idris2-getopts idris2-elab-util idris2-refined idris2-literal
-       idris2-filepath].each do |lib_name|
-      resource(lib_name).stage do
-        Dir.glob("*.ipkg").each do |ipkg|
-          system idris2_bin, "--install", ipkg
-        end
-      end
+    resource("idris2-algebra").stage do
+      system idris2_bin, "--install", "algebra.ipkg"
     end
 
-    # ilex has sub-packages in subdirectories; install in dependency order
+    resource("idris2-ref1").stage do
+      system idris2_bin, "--install", "ref1.ipkg"
+    end
+
+    resource("idris2-array").stage do
+      system idris2_bin, "--install", "array.ipkg"
+    end
+
+    resource("idris2-bytestring").stage do
+      system idris2_bin, "--install", "bytestring.ipkg"
+    end
+
+    resource("idris2-getopts").stage do
+      system idris2_bin, "--install", "getopts.ipkg"
+    end
+
+    resource("idris2-elab-util").stage do
+      system idris2_bin, "--install", "elab-util.ipkg"
+      system idris2_bin, "--install", "elab-pretty.ipkg"
+    end
+
+    resource("idris2-refined").stage do
+      system idris2_bin, "--install", "refined.ipkg"
+    end
+
+    resource("idris2-literal").stage do
+      system idris2_bin, "--install", "literal.ipkg"
+    end
+
     resource("idris2-ilex").stage do
       system idris2_bin, "--install", "core/ilex-core.ipkg"
       system idris2_bin, "--install", "ilex.ipkg"
+      system idris2_bin, "--install", "json/ilex-json.ipkg"
       system idris2_bin, "--install", "toml/ilex-toml.ipkg"
+      system idris2_bin, "--install", "debug/ilex-debug.ipkg"
+    end
+
+    resource("idris2-filepath").stage do
+      system idris2_bin, "--install", "filepath.ipkg"
     end
 
     # Step 3: Build pack
