@@ -7,11 +7,13 @@ How the homebrew-idris tap automation works.
 ```
 pack-db nightly ──> check-upstream.yml ──> update-formula.yml ──> PR
                                                                    │
-                                                         maintainer merges + tags
+                                                         tests.yml (brew test-bot)
+                                                         builds bottles as artifacts
                                                                    │
-                                                         build-bottles.yml
+                                                         maintainer adds pr-pull label
                                                                    │
-                                                         GitHub Release (bottles)
+                                                         publish.yml (brew pr-pull)
+                                                         creates GitHub Release, updates formula
                                                                    │
                                                          brew install (seconds)
 ```
@@ -54,11 +56,9 @@ A Ruby file with `{{PLACEHOLDER}}` markers, filled by `generate-formula.py`. Pla
 
 **`update-formula.yml`** — Resolves the collection, generates the formula, creates a PR.
 
-**`tests.yml`** — Standard `brew test-bot` on PRs. Builds bottles on macOS Intel (macos-13) and ARM (macos-15), uploads as artifacts.
+**`tests.yml`** — Standard `brew test-bot` on PRs. Builds bottles on macOS ARM (macos-14, macos-15), uploads as artifacts.
 
 **`publish.yml`** — Triggered by `pr-pull` label. Uses `brew pr-pull` to download artifacts, create a GitHub Release, update the formula bottle block, and push to main.
-
-**`build-bottles.yml`** — Triggered by tags (`idris2-pack-*`). Full matrix bottle build, GitHub Release creation, formula bottle block update.
 
 **`verify-install.yml`** — Weekly. Installs from the tap on both architectures and verifies the bottle was used.
 
@@ -69,7 +69,7 @@ CalVer `YYYY.MM.DD` derived from the nightly collection date. For example, `nigh
 ## Bottle details
 
 - **Cellar**: `:any` on macOS (contains `libidris2_support.dylib`)
-- **Architectures**: `arm64_sequoia` (macos-15), `sonoma` (macos-13)
+- **Architectures**: `arm64_sequoia` (macos-15), `arm64_sonoma` (macos-14)
 - **Size**: ~5-15 MB uncompressed, ~2-6 MB compressed
 - **Contents**: pack binary, `pack_app/` directory, `libidris2_support.dylib`, bootstrapped Idris2 toolchain
 - **Not included**: user state (`~/.local/state/pack/`), user config (`~/.config/pack/`), package collections
