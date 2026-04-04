@@ -29,7 +29,7 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Checkout tap
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Tap self
         run: |
@@ -57,7 +57,7 @@ jobs:
       contents: write
     steps:
       - name: Checkout tap
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
