@@ -40,7 +40,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install dependencies
-        run: pip install tomli requests
+        run: pip install tomli
 
       - name: Download collection TOML
         run: |
@@ -69,6 +69,13 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           branch="update/idris2-pack-${{ inputs.version }}"
+
+          # Delete existing remote branch if present (stale from a previous failed run)
+          if git ls-remote --exit-code origin "refs/heads/$branch" >/dev/null 2>&1; then
+            echo "Deleting stale remote branch $branch"
+            git push origin --delete "$branch"
+          fi
+
           git checkout -b "$branch"
           git add Formula/idris2-pack.rb
           git commit -m "idris2-pack ${{ inputs.version }}
@@ -76,8 +83,14 @@ jobs:
           Update to nightly collection ${{ inputs.collection_file }}"
           git push -u origin "$branch"
 
-          gh pr create \
-            --title "idris2-pack ${{ inputs.version }}" \
-            --body "Automated update to nightly collection \`${{ inputs.collection_file }}\`." \
-            --base main \
-            --head "$branch"
+          # Skip PR creation if one already exists for this branch
+          existing_pr=$(gh pr list --head "$branch" --state open --json number --jq '.[0].number // empty')
+          if [ -n "$existing_pr" ]; then
+            echo "PR #$existing_pr already exists for $branch, skipping creation"
+          else
+            gh pr create \
+              --title "idris2-pack ${{ inputs.version }}" \
+              --body "Automated update to nightly collection \`${{ inputs.collection_file }}\`." \
+              --base main \
+              --head "$branch"
+          fi

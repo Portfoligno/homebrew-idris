@@ -73,6 +73,12 @@ def main() -> None:
 
     # Resolve pack
     pack_section = collection.get("pack", collection.get("db", {}).get("pack", {}))
+    if not pack_section:
+        print(
+            "ERROR: 'pack' section not found in collection (checked top-level and db.pack)",
+            file=sys.stderr,
+        )
+        sys.exit(1)
     pack_commit = pack_section["commit"]
     pack_url = archive_url("stefan-hoeck", "idris2-pack", pack_commit)
     pack_sha = sha256_of_url(pack_url)

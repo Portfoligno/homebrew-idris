@@ -39,7 +39,7 @@ jobs:
             "https://api.github.com/repos/stefan-hoeck/idris2-pack-db/contents/collections" \
             | jq -r '.[].name' \
             | grep '^nightly-' \
-            | sort -V \
+            | sort \
             | tail -1)
 
           echo "collection_file=$latest" >> "$GITHUB_OUTPUT"

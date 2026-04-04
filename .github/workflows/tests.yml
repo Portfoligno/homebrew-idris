@@ -54,6 +54,7 @@ jobs:
         run: brew test-bot --only-tap-syntax
 
       - name: Build bottles
+        id: build
         if: github.event_name == 'pull_request'
         run: >
           brew test-bot
@@ -63,7 +64,7 @@ jobs:
         timeout-minutes: 90
 
       - name: Upload bottles as artifact
-        if: always() && github.event_name == 'pull_request'
+        if: steps.build.outcome == 'success'
         uses: actions/upload-artifact@v7
         with:
           name: bottles_${{ matrix.os }}

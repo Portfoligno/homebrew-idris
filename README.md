@@ -2,7 +2,7 @@
 
 Homebrew Tap for [idris2-pack](https://github.com/stefan-hoeck/idris2-pack), the package manager for the Idris 2 programming language.
 
-Provides pre-built bottles for macOS (Intel and Apple Silicon) so installation completes in seconds instead of building from source.
+Provides pre-built bottles for macOS (Apple Silicon) so installation completes in seconds instead of building from source. Intel Macs fall back to a source build.
 
 ## Install
 
