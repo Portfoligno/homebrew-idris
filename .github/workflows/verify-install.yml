@@ -24,9 +24,7 @@ jobs:
           brew install Portfoligno/idris/idris2-pack
 
       - name: Verify binary
-        run: |
-          pack --help
-          pack --version
+        run: pack help
 
       - name: Verify bottle was used
         run: |

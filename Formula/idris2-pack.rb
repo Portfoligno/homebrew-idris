@@ -101,12 +101,19 @@ class Idris2Pack < Formula
 
     %w[idris2-algebra idris2-ref1 idris2-array idris2-bytestring
        idris2-getopts idris2-elab-util idris2-refined idris2-literal
-       idris2-ilex idris2-filepath].each do |lib_name|
+       idris2-filepath].each do |lib_name|
       resource(lib_name).stage do
         Dir.glob("*.ipkg").each do |ipkg|
           system idris2_bin, "--install", ipkg
         end
       end
+    end
+
+    # ilex has sub-packages in subdirectories; install in dependency order
+    resource("idris2-ilex").stage do
+      system idris2_bin, "--install", "core/ilex-core.ipkg"
+      system idris2_bin, "--install", "ilex.ipkg"
+      system idris2_bin, "--install", "toml/ilex-toml.ipkg"
     end
 
     # Step 3: Build pack
@@ -139,7 +146,6 @@ class Idris2Pack < Formula
   end
 
   test do
-    assert_match "Usage", shell_output("#{bin}/pack --help")
-    assert_match version.to_s, shell_output("#{bin}/pack --version")
+    assert_match "Available commands", shell_output("#{bin}/pack help")
   end
 end

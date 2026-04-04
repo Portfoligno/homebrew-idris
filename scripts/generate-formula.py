@@ -29,12 +29,15 @@ def build_resource_blocks(libraries: list[dict]) -> str:
 
 
 def build_library_install_loop(libraries: list[dict]) -> str:
-    """Generate the Ruby loop that installs libraries in order."""
-    names = " ".join(lib["name"] for lib in libraries)
+    """Generate the Ruby loop that installs simple (non-ilex) libraries."""
+    # ilex is handled separately in the template due to sub-package structure
+    names = " ".join(
+        lib["name"] for lib in libraries if lib["name"] != "idris2-ilex"
+    )
     return (
         f"    %w[{names}].each do |lib_name|\n"
         '      resource(lib_name).stage do\n'
-        '        Dir.glob("*.ipkg").sort.each do |ipkg|\n'
+        '        Dir.glob("*.ipkg").each do |ipkg|\n'
         '          system idris2_bin, "--install", ipkg\n'
         "        end\n"
         "      end\n"

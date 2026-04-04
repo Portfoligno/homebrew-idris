@@ -27,9 +27,10 @@ Strategy B: self-contained build from source. The formula bootstraps its own Idr
 Build steps:
 1. Bootstrap Idris2 from Chez Scheme (`make bootstrap`)
 2. Install Idris2 with source libraries and API
-3. Build 10 library dependencies in order
-4. Build pack itself
-5. Install into `libexec/` with a wrapper script in `bin/`
+3. Build 9 simple library dependencies in order
+4. Build ilex sub-packages in dependency order (`ilex-core` → `ilex` → `ilex-toml`)
+5. Build pack itself
+6. Install into `libexec/` with a wrapper script in `bin/`
 
 The `libexec/` layout isolates the toolchain from the user's PATH. Only the `pack` wrapper is public.
 

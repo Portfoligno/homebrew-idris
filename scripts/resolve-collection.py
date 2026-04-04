@@ -44,11 +44,19 @@ LIBRARIES = [
 ]
 
 
-def sha256_of_url(url: str) -> str:
+def sha256_of_url(url: str, retries: int = 3) -> str:
     """Download a URL and return its SHA256 hex digest."""
-    with urlopen(url) as resp:
-        data = resp.read()
-    return hashlib.sha256(data).hexdigest()
+    for attempt in range(retries):
+        try:
+            with urlopen(url, timeout=60) as resp:
+                data = resp.read()
+            return hashlib.sha256(data).hexdigest()
+        except Exception as e:
+            if attempt < retries - 1:
+                print(f"Retry {attempt + 1}/{retries} for {url}: {e}", file=sys.stderr)
+            else:
+                raise RuntimeError(f"Failed to download {url} after {retries} attempts: {e}") from e
+    raise AssertionError("unreachable")
 
 
 def archive_url(owner: str, repo: str, commit: str) -> str:
@@ -82,10 +90,10 @@ def main() -> None:
         section = db.get(toml_key)
         if section is None:
             print(
-                f"WARNING: library '{toml_key}' not found in collection",
+                f"ERROR: required library '{toml_key}' not found in collection",
                 file=sys.stderr,
             )
-            continue
+            sys.exit(1)
         commit = section["commit"]
         url = archive_url(owner, repo, commit)
         sha = sha256_of_url(url)

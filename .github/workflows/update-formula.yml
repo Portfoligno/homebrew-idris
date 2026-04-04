@@ -61,6 +61,9 @@ jobs:
             --version "${{ inputs.version }}" \
             --output Formula/idris2-pack.rb
 
+      - name: Set up git
+        uses: Homebrew/actions/git-user-config@main
+
       - name: Create pull request
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

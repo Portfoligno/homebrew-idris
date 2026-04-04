@@ -31,9 +31,12 @@ jobs:
 
       - name: Find latest nightly collection
         id: latest
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           # List collection files from pack-db, find the latest nightly
-          latest=$(curl -sL "https://api.github.com/repos/stefan-hoeck/idris2-pack-db/contents/collections" \
+          latest=$(curl -sL -H "Authorization: Bearer $GH_TOKEN" \
+            "https://api.github.com/repos/stefan-hoeck/idris2-pack-db/contents/collections" \
             | jq -r '.[].name' \
             | grep '^nightly-' \
             | sort -V \
@@ -51,14 +54,21 @@ jobs:
         run: |
           status_md=$(curl -sL "https://raw.githubusercontent.com/stefan-hoeck/idris2-pack-db/main/STATUS.md")
 
-          # Check that the failing packages section is empty
-          if echo "$status_md" | grep -q '## Failing Packages' && \
-             ! echo "$status_md" | sed -n '/## Failing Packages/,/^##/p' | grep -q '^|'; then
+          # Extract the Failing Packages section and count data rows
+          # (skip header row "| Package |..." and separator row "| --- |...")
+          failing_rows=$(echo "$status_md" \
+            | sed -n '/## Failing Packages/,/^##/p' \
+            | grep '^|' \
+            | grep -v '^| Package' \
+            | grep -v '^| ---' \
+            | wc -l)
+
+          if [ "$failing_rows" -eq 0 ]; then
             echo "status=passing" >> "$GITHUB_OUTPUT"
             echo "Nightly build status: passing"
           else
             echo "status=failing" >> "$GITHUB_OUTPUT"
-            echo "Nightly build status: has failures"
+            echo "Nightly build status: $failing_rows failing package(s)"
           fi
 
       - name: Compare versions

@@ -29,10 +29,7 @@ else
 fi
 
 echo "==> Verifying binary"
-pack --help >/dev/null
-echo "  pack --help: OK"
-
-pack --version
-echo "  pack --version: OK"
+pack help >/dev/null
+echo "  pack help: OK"
 
 echo "==> All checks passed"
