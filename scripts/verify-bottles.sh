@@ -21,10 +21,11 @@ brew install "$FORMULA"
 echo "==> Checking bottle installation"
 info=$(brew info --json=v2 idris2-pack)
 poured=$(echo "$info" | jq -r '.formulae[0].installed[0].poured_from_bottle')
-if [ "$poured" = "true" ]; then
-    echo "  Installed from bottle: YES"
+if [ "$poured" = "true" ]
+then
+  echo "  Installed from bottle: YES"
 else
-    echo "  WARNING: Installed from source (no bottle available)"
+  echo "  WARNING: Installed from source (no bottle available)"
 fi
 
 echo "==> Verifying binary"
