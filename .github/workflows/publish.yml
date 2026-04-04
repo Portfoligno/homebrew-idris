@@ -3,6 +3,10 @@ on:
   pull_request_target:
     types: [labeled]
 
+defaults:
+  run:
+    shell: sh
+
 jobs:
   pr-pull:
     if: contains(github.event.pull_request.labels.*.name, 'pr-pull')

@@ -23,6 +23,10 @@ permissions:
   contents: write
   pull-requests: write
 
+defaults:
+  run:
+    shell: sh
+
 jobs:
   update:
     runs-on: ubuntu-latest

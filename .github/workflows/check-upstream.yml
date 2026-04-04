@@ -7,6 +7,10 @@ on:
 permissions:
   contents: read
 
+defaults:
+  run:
+    shell: sh
+
 jobs:
   check:
     runs-on: ubuntu-latest
@@ -21,7 +25,7 @@ jobs:
       - name: Get current formula version
         id: current
         run: |
-          version=$(grep -oP 'version "\K[^"]+' Formula/idris2-pack.rb)
+          version=$(sed -n 's/.*version "\([^"]*\)".*/\1/p' Formula/idris2-pack.rb)
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "Current formula version: $version"
 
@@ -48,7 +52,8 @@ jobs:
           status_md=$(curl -sL "https://raw.githubusercontent.com/stefan-hoeck/idris2-pack-db/main/STATUS.md")
 
           # Check that the failing packages section is empty
-          if echo "$status_md" | grep -qP '## Failing Packages\s*\n\s*\n'; then
+          if echo "$status_md" | grep -q '## Failing Packages' && \
+             ! echo "$status_md" | sed -n '/## Failing Packages/,/^##/p' | grep -q '^|'; then
             echo "status=passing" >> "$GITHUB_OUTPUT"
             echo "Nightly build status: passing"
           else

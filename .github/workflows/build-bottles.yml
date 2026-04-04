@@ -9,6 +9,10 @@ permissions:
   actions: read
   checks: read
 
+defaults:
+  run:
+    shell: sh
+
 jobs:
   bottle:
     strategy:
