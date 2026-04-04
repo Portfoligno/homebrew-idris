@@ -22,7 +22,7 @@ class Idris2Pack < Formula
     sha256 "{{IDRIS2_SHA256}}"
   end
 
-  {{RESOURCE_BLOCKS}}
+{{RESOURCE_BLOCKS}}
 
   def install
     ENV.deparallelize # Idris2 packages must build sequentially
@@ -51,7 +51,7 @@ class Idris2Pack < Formula
     pkg_path = "#{idris2_prefix}/idris2-#{idris2_version}"
     ENV["IDRIS2_PACKAGE_PATH"] = pkg_path
 
-    {{LIBRARY_INSTALL_LOOP}}
+{{LIBRARY_INSTALL_LOOP}}
 
     # ilex has sub-packages in subdirectories; install in dependency order
     resource("idris2-ilex").stage do
