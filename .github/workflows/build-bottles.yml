@@ -1,0 +1,89 @@
+name: Build and publish bottles
+on:
+  push:
+    tags:
+      - "idris2-pack-*"
+
+permissions:
+  contents: write
+  actions: read
+  checks: read
+
+jobs:
+  bottle:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-13, macos-15]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 120
+    steps:
+      - name: Set up Homebrew
+        id: set-up-homebrew
+        uses: Homebrew/actions/setup-homebrew@main
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Checkout tap
+        uses: actions/checkout@v4
+
+      - name: Tap self
+        run: |
+          mkdir -p "$(brew --repository)/Library/Taps/$GITHUB_REPOSITORY"
+          cp -a . "$(brew --repository)/Library/Taps/$GITHUB_REPOSITORY"
+
+      - name: Build bottle
+        run: |
+          brew install --build-bottle idris2-pack
+          brew bottle --json --root-url="https://github.com/$GITHUB_REPOSITORY/releases/download/${{ github.ref_name }}" idris2-pack
+        timeout-minutes: 90
+
+      - name: Upload bottle artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: bottle-${{ matrix.os }}
+          path: |
+            *.bottle.tar.gz
+            *.bottle.json
+
+  publish:
+    needs: bottle
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout tap
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Homebrew
+        uses: Homebrew/actions/setup-homebrew@main
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Download all bottle artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: bottle-*
+          merge-multiple: true
+
+      - name: Create GitHub Release and upload bottles
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          tag="${{ github.ref_name }}"
+          gh release create "$tag" \
+            --title "$tag" \
+            --notes "Bottles for idris2-pack ${tag#idris2-pack-}" \
+            *.bottle.tar.gz
+
+      - name: Merge bottle JSON into formula
+        run: |
+          brew bottle --merge --write --no-commit *.bottle.json
+
+      - name: Push updated formula
+        run: |
+          git add Formula/idris2-pack.rb
+          git commit -m "Update bottle block for ${{ github.ref_name }}"
+          git push origin HEAD:main

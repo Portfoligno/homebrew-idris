@@ -1,0 +1,35 @@
+name: Verify published bottles
+on:
+  schedule:
+    - cron: "0 12 * * 1" # Weekly on Monday at 12:00 UTC
+  workflow_dispatch:
+
+jobs:
+  verify:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-13, macos-15]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - name: Install from tap
+        run: |
+          brew tap Portfoligno/idris
+
+          brew install Portfoligno/idris/idris2-pack
+
+      - name: Verify binary
+        run: |
+          pack --help
+          pack --version
+
+      - name: Verify bottle was used
+        run: |
+          info=$(brew info --json=v2 idris2-pack)
+          poured=$(echo "$info" | jq -r '.formulae[0].installed[0].poured_from_bottle')
+          if [ "$poured" != "true" ]; then
+            echo "::warning::idris2-pack was NOT installed from a bottle"
+            exit 1
+          fi
+          echo "Installed from bottle: OK"

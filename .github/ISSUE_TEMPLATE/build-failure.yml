@@ -1,0 +1,50 @@
+name: Build failure
+description: Report a bottle build or source build failure
+labels: ["bug", "build"]
+body:
+  - type: input
+    id: version
+    attributes:
+      label: Formula version
+      description: Output of `brew info idris2-pack` or the version in the formula
+      placeholder: "2026.04.03"
+    validations:
+      required: true
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - macOS ARM (Apple Silicon)
+        - macOS Intel
+        - Linux x86_64
+    validations:
+      required: true
+  - type: input
+    id: macos-version
+    attributes:
+      label: macOS version
+      placeholder: "15.3 (Sequoia)"
+  - type: dropdown
+    id: install-method
+    attributes:
+      label: Install method
+      options:
+        - Bottle (default)
+        - Source (--build-from-source)
+        - CI (brew test-bot)
+    validations:
+      required: true
+  - type: textarea
+    id: log
+    attributes:
+      label: Build log
+      description: Paste the relevant portion of the build log
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Any other relevant information

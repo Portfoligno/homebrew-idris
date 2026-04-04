@@ -1,0 +1,76 @@
+name: Update formula
+on:
+  workflow_call:
+    inputs:
+      collection_file:
+        required: true
+        type: string
+      version:
+        required: true
+        type: string
+  workflow_dispatch:
+    inputs:
+      collection_file:
+        description: "Collection filename (e.g. nightly-260403.toml)"
+        required: true
+        type: string
+      version:
+        description: "Version string (e.g. 2026.04.03)"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout tap
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install tomli requests
+
+      - name: Download collection TOML
+        run: |
+          curl -sL "https://raw.githubusercontent.com/stefan-hoeck/idris2-pack-db/main/collections/${{ inputs.collection_file }}" \
+            -o collection.toml
+
+      - name: Resolve collection
+        id: resolve
+        run: |
+          python scripts/resolve-collection.py collection.toml > resources.json
+          cat resources.json
+
+      - name: Generate formula
+        run: |
+          python scripts/generate-formula.py \
+            --template Formula/idris2-pack.rb.template \
+            --resources resources.json \
+            --version "${{ inputs.version }}" \
+            --output Formula/idris2-pack.rb
+
+      - name: Create pull request
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          branch="update/idris2-pack-${{ inputs.version }}"
+          git checkout -b "$branch"
+          git add Formula/idris2-pack.rb
+          git commit -m "idris2-pack ${{ inputs.version }}
+
+          Update to nightly collection ${{ inputs.collection_file }}"
+          git push -u origin "$branch"
+
+          gh pr create \
+            --title "idris2-pack ${{ inputs.version }}" \
+            --body "Automated update to nightly collection \`${{ inputs.collection_file }}\`." \
+            --base main \
+            --head "$branch"

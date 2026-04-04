@@ -1,0 +1,84 @@
+name: Check upstream nightly
+on:
+  schedule:
+    - cron: "0 6 * * *" # Daily at 06:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    outputs:
+      has_update: ${{ steps.compare.outputs.has_update }}
+      collection_date: ${{ steps.compare.outputs.collection_date }}
+      collection_file: ${{ steps.compare.outputs.collection_file }}
+    steps:
+      - name: Checkout tap
+        uses: actions/checkout@v4
+
+      - name: Get current formula version
+        id: current
+        run: |
+          version=$(grep -oP 'version "\K[^"]+' Formula/idris2-pack.rb)
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Current formula version: $version"
+
+      - name: Find latest nightly collection
+        id: latest
+        run: |
+          # List collection files from pack-db, find the latest nightly
+          latest=$(curl -sL "https://api.github.com/repos/stefan-hoeck/idris2-pack-db/contents/collections" \
+            | jq -r '.[].name' \
+            | grep '^nightly-' \
+            | sort -V \
+            | tail -1)
+
+          echo "collection_file=$latest" >> "$GITHUB_OUTPUT"
+
+          # Extract date: nightly-YYMMDD.toml -> YYYY.MM.DD
+          date_part=$(echo "$latest" | sed 's/nightly-\([0-9]\{2\}\)\([0-9]\{2\}\)\([0-9]\{2\}\)\.toml/20\1.\2.\3/')
+          echo "collection_date=$date_part" >> "$GITHUB_OUTPUT"
+          echo "Latest nightly: $latest (version: $date_part)"
+
+      - name: Check build status
+        id: status
+        run: |
+          status_md=$(curl -sL "https://raw.githubusercontent.com/stefan-hoeck/idris2-pack-db/main/STATUS.md")
+
+          # Check that the failing packages section is empty
+          if echo "$status_md" | grep -qP '## Failing Packages\s*\n\s*\n'; then
+            echo "status=passing" >> "$GITHUB_OUTPUT"
+            echo "Nightly build status: passing"
+          else
+            echo "status=failing" >> "$GITHUB_OUTPUT"
+            echo "Nightly build status: has failures"
+          fi
+
+      - name: Compare versions
+        id: compare
+        run: |
+          current="${{ steps.current.outputs.version }}"
+          latest="${{ steps.latest.outputs.collection_date }}"
+          status="${{ steps.status.outputs.status }}"
+
+          if [ "$current" != "$latest" ] && [ "$status" = "passing" ]; then
+            echo "has_update=true" >> "$GITHUB_OUTPUT"
+            echo "Update available: $current -> $latest"
+          else
+            echo "has_update=false" >> "$GITHUB_OUTPUT"
+            echo "No update needed (current=$current, latest=$latest, status=$status)"
+          fi
+
+          echo "collection_date=${{ steps.latest.outputs.collection_date }}" >> "$GITHUB_OUTPUT"
+          echo "collection_file=${{ steps.latest.outputs.collection_file }}" >> "$GITHUB_OUTPUT"
+
+  trigger-update:
+    needs: check
+    if: needs.check.outputs.has_update == 'true'
+    uses: ./.github/workflows/update-formula.yml
+    with:
+      collection_file: ${{ needs.check.outputs.collection_file }}
+      version: ${{ needs.check.outputs.collection_date }}
+    secrets: inherit
