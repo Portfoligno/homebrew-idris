@@ -80,11 +80,11 @@ jobs:
           gh release create "$tag" \
             --title "$tag" \
             --notes "Bottles for idris2-pack ${tag#idris2-pack-}" \
-            *.bottle.tar.gz
+            -- *.bottle.tar.gz
 
       - name: Merge bottle JSON into formula
         run: |
-          brew bottle --merge --write --no-commit *.bottle.json
+          brew bottle --merge --write --no-commit -- *.bottle.json
 
       - name: Push updated formula
         run: |
