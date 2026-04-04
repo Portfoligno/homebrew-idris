@@ -54,6 +54,15 @@ jobs:
       - name: Tap syntax
         run: brew test-bot --only-tap-syntax
 
+      - name: Extract formula from branch
+        id: formula
+        if: startsWith(github.ref, 'refs/heads/update/')
+        run: |
+          # Branch is update/<formula>-<version>; strip prefix and last hyphenated segment
+          name="${GITHUB_REF#refs/heads/update/}"
+          name="${name%-*}"
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+
       - name: Build bottles
         id: build
         if: startsWith(github.ref, 'refs/heads/update/')
@@ -62,12 +71,13 @@ jobs:
           --only-formulae
           --only-json-tab
           --skip-dependents
+          --testing-formulae=${{ steps.formula.outputs.name }}
         timeout-minutes: 90
 
       - name: Upload bottles as artifact
-        if: steps.build.outcome == 'success'
+        if: always() && steps.build.outcome == 'success'
         uses: actions/upload-artifact@v7
         with:
           name: bottles_${{ matrix.os }}
-          path: "*.bottle.*"
+          path: '*.bottle.*'
           if-no-files-found: error
