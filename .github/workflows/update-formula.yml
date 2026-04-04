@@ -44,7 +44,7 @@ jobs:
 
       - name: Download collection TOML
         run: |
-          curl -sL "https://raw.githubusercontent.com/stefan-hoeck/idris2-pack-db/main/collections/${{ inputs.collection_file }}" \
+          curl --fail -sL "https://raw.githubusercontent.com/stefan-hoeck/idris2-pack-db/main/collections/${{ inputs.collection_file }}" \
             -o collection.toml
 
       - name: Resolve collection
