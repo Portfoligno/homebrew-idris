@@ -71,10 +71,12 @@ class Idris2Pack < Formula
 
   def caveats
     <<~EOS
-      To initialize pack and install a managed Idris2 compiler+libraries:
-        pack switch latest
+      This formula includes a bundled Idris2 compiler. You can use pack
+      immediately to build and install Idris2 packages:
+        pack build
+        pack install <package>
 
-      Pack installs wrapper scripts to $HOME/.local/bin by default.
+      Pack installs executables to $HOME/.local/bin by default.
       Add it to your PATH:
         export PATH="$HOME/.local/bin:$PATH"
 
