@@ -20,7 +20,7 @@ jobs:
       collection_file: ${{ steps.compare.outputs.collection_file }}
     steps:
       - name: Checkout tap
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Get current formula version
         id: current
