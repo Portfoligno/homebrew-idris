@@ -4,6 +4,7 @@ class Idris2Pack < Formula
 
   url "https://github.com/stefan-hoeck/idris2-pack/archive/ffff61f5b0400525d7b0c41eef79e83ebe2b0b52.tar.gz"
   version "2026.04.03"
+  sha256 "f8b79be795445bfb7440a856db31760bfbfc62f272b9fcef40d2c09a805f6d49"
   license "BSD-3-Clause"
 
   bottle do
@@ -13,51 +14,62 @@ class Idris2Pack < Formula
     # sha256 cellar: :any, sonoma:        "..."
   end
 
-  depends_on "chezscheme"
   depends_on "gmp" => :build
+  depends_on "chezscheme"
 
   resource "idris2" do
     url "https://github.com/idris-lang/Idris2/archive/37d29157a3d5d65d8dca3623d42ebee6cd44a984.tar.gz"
+    sha256 "a75369722348ef469a5981ebeb488eba115c4b69fa4baea4643d2d3a9248a1f6"
   end
 
   resource "idris2-algebra" do
     url "https://github.com/stefan-hoeck/idris2-algebra/archive/e279843a99fe250e2fcd928c774ddb6ffe36815b.tar.gz"
+    sha256 "dfe2a3554ba2437c121f962dba2eaca1a2416803306910fc5a1d66283d47f034"
   end
 
   resource "idris2-ref1" do
     url "https://github.com/stefan-hoeck/idris2-ref1/archive/b294c58f4ef5e67762c217c3ca938239c410eede.tar.gz"
+    sha256 "bcf92af5ff09b7f8f917c53a91c11f23fb7927b58a91f21adfb241b7f58aacf6"
   end
 
   resource "idris2-array" do
     url "https://github.com/stefan-hoeck/idris2-array/archive/47fb4c0eef3223a02d60c832a0e6b98193d4c44c.tar.gz"
+    sha256 "3be995be9a1c50e46bb2e6533c3a20de97ce5230af3cc920496eb5343e5e06e5"
   end
 
   resource "idris2-bytestring" do
     url "https://github.com/stefan-hoeck/idris2-bytestring/archive/230d8577f02de22251786f128ec921078da4d880.tar.gz"
+    sha256 "b2c74a34038bb35264587eef3279a9e750f356e25f16856b6da57401b07bf095"
   end
 
   resource "idris2-getopts" do
     url "https://github.com/idris-community/idris2-getopts/archive/0d41b98f83f3707deb0ffbc595ef36b7d9cb9eab.tar.gz"
+    sha256 "904ef2a23953856655e9e255345696932e9540ab5e24e43f448f18945034e7b9"
   end
 
   resource "idris2-elab-util" do
     url "https://github.com/stefan-hoeck/idris2-elab-util/archive/90a2363256cbaafd3b0cc4e2bf36003761b6c4f0.tar.gz"
+    sha256 "cd15b43d5e3bd0631649de8539174691302e29728740f8e29bab09928ef59bac"
   end
 
   resource "idris2-refined" do
     url "https://github.com/stefan-hoeck/idris2-refined/archive/02e43fa2b89076b4096c5f442bac7bea8814d552.tar.gz"
+    sha256 "a3bdc2fd25b09b9c1769d61ef8115f986c369540a7b0cdb2a72eb879d535a4de"
   end
 
   resource "idris2-literal" do
     url "https://github.com/stefan-hoeck/idris2-literal/archive/f0fed86ae9bd5b13d98e4dd18103a6e1f7f7c6b4.tar.gz"
+    sha256 "ce69894d3c8a75c681c738b87719bf0fd87ef6b72e53a72b92e789b3451d9057"
   end
 
   resource "idris2-ilex" do
     url "https://github.com/stefan-hoeck/idris2-ilex/archive/a07a214d2284b73622f7ff583b7c2c3f146155ab.tar.gz"
+    sha256 "04508e52ba9891b4d64503243603c821eb678776f6e32b138127e98f3e806f14"
   end
 
   resource "idris2-filepath" do
     url "https://github.com/stefan-hoeck/idris2-filepath/archive/4e8fe9af80d457adc63904ebf58e223ba35c62aa.tar.gz"
+    sha256 "681105b67a528329c12bff59d4359c6b7d2906ad9f8935c1392057ec550d48a2"
   end
 
   def install
@@ -66,9 +78,7 @@ class Idris2Pack < Formula
     scheme = Formula["chezscheme"].opt_bin/"chez"
     ENV["CHEZ"] = scheme
 
-    if OS.mac? && Hardware::CPU.arm?
-      ENV.append "CPATH", "#{HOMEBREW_PREFIX}/include"
-    end
+    ENV.append "CPATH", "#{HOMEBREW_PREFIX}/include" if OS.mac? && Hardware::CPU.arm?
 
     # Step 1: Bootstrap Idris2 compiler from Chez Scheme
     idris2_prefix = buildpath/"idris2-install"
@@ -93,7 +103,7 @@ class Idris2Pack < Formula
        idris2-getopts idris2-elab-util idris2-refined idris2-literal
        idris2-ilex idris2-filepath].each do |lib_name|
       resource(lib_name).stage do
-        Dir.glob("*.ipkg").sort.each do |ipkg|
+        Dir.glob("*.ipkg").each do |ipkg|
           system idris2_bin, "--install", ipkg
         end
       end
