@@ -5,17 +5,21 @@ How the homebrew-idris tap automation works.
 ## Overview
 
 ```
-pack-db nightly ──> check-upstream.yml ──> update-formula.yml ──> PR
-                                                                   │
-                                                         tests.yml (brew test-bot)
-                                                         builds bottles as artifacts
-                                                                   │
-                                                         maintainer adds pr-pull label
-                                                                   │
-                                                         publish.yml (brew pr-pull)
-                                                         creates GitHub Release, updates formula
-                                                                   │
-                                                         brew install (seconds)
+pack-db nightly ──> check-upstream.yml ──> update-formula.yml
+                                               │
+                                               ├──> pushes update/ branch (SSH deploy key)
+                                               │        │
+                                               │    tests.yml (brew test-bot)
+                                               │    builds bottles as artifacts
+                                               │
+                                               └──> creates PR
+                                                        │
+                                              maintainer adds pr-pull label
+                                                        │
+                                              publish.yml (brew pr-pull)
+                                              creates GitHub Release, updates formula
+                                                        │
+                                              brew install (seconds)
 ```
 
 ## Components
@@ -54,13 +58,13 @@ A Ruby file with `{{PLACEHOLDER}}` markers, filled by `generate-formula.py`. Pla
 
 **`check-upstream.yml`** — Daily cron. Queries pack-db for the latest nightly, compares against the formula version, checks STATUS.md for build health, triggers `update-formula.yml` if an update is available.
 
-**`update-formula.yml`** — Resolves the collection, generates the formula, creates a PR.
+**`update-formula.yml`** — Resolves the collection, generates the formula, pushes an `update/` branch via SSH deploy key, and creates a PR. The SSH push (rather than GITHUB_TOKEN) ensures the push event triggers `tests.yml`.
 
-**`tests.yml`** — Standard `brew test-bot` on PRs. Builds bottles on macOS ARM (macos-14, macos-15), uploads as artifacts.
+**`tests.yml`** — Runs `brew test-bot` on pushes to `main` and `update/**` branches. Builds bottles on macOS ARM (macos-14, macos-15), uploads as artifacts.
 
 **`publish.yml`** — Triggered by `pr-pull` label. Uses `brew pr-pull` to download artifacts, create a GitHub Release, update the formula bottle block, and push to main.
 
-**`verify-install.yml`** — Weekly. Installs from the tap on both architectures and verifies the bottle was used.
+**`verify-install.yml`** — Weekly. Installs from the tap on ARM runners and verifies the bottle was used.
 
 ## Version scheme
 
