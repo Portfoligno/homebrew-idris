@@ -61,7 +61,7 @@ jobs:
             | grep '^|' \
             | grep -v '^| Package' \
             | grep -v '^| ---' \
-            | wc -l)
+            | grep -c . || true)
 
           if [ "$failing_rows" -eq 0 ]; then
             echo "status=passing" >> "$GITHUB_OUTPUT"
