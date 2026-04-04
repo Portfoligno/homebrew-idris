@@ -1,8 +1,9 @@
 name: brew test-bot
 on:
   push:
-    branches: [main]
-  pull_request:
+    branches:
+      - main
+      - update/**
 
 defaults:
   run:
@@ -15,8 +16,8 @@ env:
   HOMEBREW_NO_INSTALL_FROM_API: 1
 
 concurrency:
-  group: tests-${{ github.event.pull_request.number || github.sha }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: tests-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   test-bot:
@@ -30,7 +31,6 @@ jobs:
       actions: read
       checks: read
       contents: read
-      pull-requests: read
     steps:
       - name: Set up Homebrew
         id: set-up-homebrew
@@ -56,7 +56,7 @@ jobs:
 
       - name: Build bottles
         id: build
-        if: github.event_name == 'pull_request'
+        if: startsWith(github.ref, 'refs/heads/update/')
         run: >
           brew test-bot
           --only-formulae

@@ -64,16 +64,26 @@ jobs:
       - name: Set up git
         uses: Homebrew/actions/git-user-config@main
 
-      - name: Create pull request
+      # Push via SSH deploy key so the push event triggers CI workflows.
+      # GITHUB_TOKEN-created pushes do not trigger other workflows.
+      # Setup: add the public key as a repo deploy key (write access),
+      # and store the private key as the DEPLOY_KEY repository secret.
+      - name: Set up SSH deploy key
+        uses: webfactory/ssh-agent@v0.9.1
+        with:
+          ssh-private-key: ${{ secrets.DEPLOY_KEY }}
+
+      - name: Push branch and create pull request
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           branch="update/idris2-pack-${{ inputs.version }}"
+          ssh_remote="git@github.com:${{ github.repository }}.git"
 
           # Delete existing remote branch if present (stale from a previous failed run)
           if git ls-remote --exit-code origin "refs/heads/$branch" >/dev/null 2>&1; then
             echo "Deleting stale remote branch $branch"
-            git push origin --delete "$branch"
+            git push "$ssh_remote" --delete "$branch"
           fi
 
           git checkout -b "$branch"
@@ -81,7 +91,9 @@ jobs:
           git commit -m "idris2-pack ${{ inputs.version }}
 
           Update to nightly collection ${{ inputs.collection_file }}"
-          git push -u origin "$branch"
+
+          # Push over SSH so the push event triggers CI (tests.yml)
+          git push "$ssh_remote" "$branch"
 
           # Skip PR creation if one already exists for this branch
           existing_pr=$(gh pr list --head "$branch" --state open --json number --jq '.[0].number // empty')
