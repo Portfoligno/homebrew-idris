@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/usr/bin/env sh
 # Verify that published bottles for idris2-pack are installable and functional.
 #
 # Usage:
@@ -7,7 +7,7 @@
 # Arguments:
 #     tap   The tap name (default: Portfoligno/idris)
 
-set -euo pipefail
+set -eu
 
 TAP="${1:-Portfoligno/idris}"
 FORMULA="$TAP/idris2-pack"
