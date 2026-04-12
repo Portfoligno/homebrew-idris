@@ -69,7 +69,7 @@ jobs:
       # Setup: add the public key as a repo deploy key (write access),
       # and store the private key as the DEPLOY_KEY repository secret.
       - name: Set up SSH deploy key
-        uses: webfactory/ssh-agent@v0.9.1
+        uses: webfactory/ssh-agent@v0.10.0
         with:
           ssh-private-key: ${{ secrets.DEPLOY_KEY }}
 
