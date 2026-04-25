@@ -31,8 +31,10 @@ jobs:
 
       - name: Verify bottle was used
         run: |
-          info=$(brew info --json=v2 idris2-pack)
-          poured=$(echo "$info" | jq -r '.formulae[0].installed[0].poured_from_bottle')
+          cellar=$(brew --cellar idris2-pack)
+          version=$(brew list --versions idris2-pack | awk '{print $2}')
+          receipt="$cellar/$version/INSTALL_RECEIPT.json"
+          poured=$(jq -r '.poured_from_bottle' "$receipt")
           if [ "$poured" != "true" ]; then
             echo "::warning::idris2-pack was NOT installed from a bottle"
             exit 1
