@@ -51,6 +51,10 @@ class Idris2Pack < Formula
     pkg_path = "#{idris2_prefix}/idris2-#{idris2_version}"
     ENV["IDRIS2_PACKAGE_PATH"] = pkg_path
 
+    # Redirect library installs to a separate prefix (keep core-only in idris2_prefix)
+    build_deps_prefix = buildpath/"build-deps"
+    ENV["IDRIS2_PREFIX"] = build_deps_prefix.to_s
+
 {{LIBRARY_INSTALL_BLOCKS}}
 
     # Step 3: Build pack
@@ -61,11 +65,28 @@ class Idris2Pack < Formula
     libexec.install "build/exec/pack_app"
     (libexec/"idris2-toolchain").install Dir[idris2_prefix/"*"]
 
-    # Step 5: Wrapper script
+    # Step 5: Wrapper scripts
+    #
+    # The bundled idris2 binary's compiled-in prefix points to a temporary
+    # build directory that no longer exists. Wrap it so it can find core
+    # libraries (prelude, base, etc.) via IDRIS2_PREFIX — but only as a
+    # fallback, so pack's explicit overrides (during `pack install`) take
+    # precedence.
+    idris2_script = libexec/"idris2-toolchain/bin/idris2"
+    idris2_wrapped = libexec/"idris2-toolchain/bin/.idris2-wrapped"
+    mv idris2_script, idris2_wrapped
+    idris2_script.write <<~SH
+      #!/bin/sh
+      export IDRIS2_PREFIX="${IDRIS2_PREFIX:-#{libexec}/idris2-toolchain}"
+      exec "#{idris2_wrapped}" "$@"
+    SH
+    idris2_script.chmod 0755
+
+    # Pack wrapper sets PATH only — IDRIS2_PREFIX is NOT exported here,
+    # preventing it from leaking to pack's child processes.
     (bin/"pack").write_env_script(
       libexec/"pack",
-      PATH:          "#{Formula["chezscheme"].opt_bin}:#{libexec}/idris2-toolchain/bin:$PATH",
-      IDRIS2_PREFIX: libexec/"idris2-toolchain",
+      PATH: "#{Formula["chezscheme"].opt_bin}:#{libexec}/idris2-toolchain/bin:$PATH",
     )
   end
 
