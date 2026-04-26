@@ -145,6 +145,13 @@ class Idris2Pack < Formula
       system idris2_bin, "--install", "filepath.ipkg"
     end
 
+    # Symlink support/lib from the bootstrap install so the compiler can find
+    # chez/support.ss and libidris2_support.dylib under the redirected prefix
+    build_deps_ver_dir = build_deps_prefix/"idris2-#{idris2_version}"
+    mkdir_p build_deps_ver_dir
+    ln_s idris2_prefix/"idris2-#{idris2_version}/support", build_deps_ver_dir/"support"
+    ln_s idris2_prefix/"idris2-#{idris2_version}/lib", build_deps_ver_dir/"lib"
+
     # Step 3: Build pack
     system idris2_bin, "--build", "pack.ipkg"
 
