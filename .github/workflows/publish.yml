@@ -51,88 +51,22 @@ jobs:
         with:
           branch: main
 
-      - name: Create versioned formula
-        id: versioned
-        run: |
-          version=$(sed -n 's/^  version "\([^"]*\)".*/\1/p' Formula/idris2-pack.rb)
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-
-          class_suffix=$(echo "$version" | tr -d '.')
-          versioned_file="Formula/idris2-pack@${version}.rb"
-
-          cp Formula/idris2-pack.rb "$versioned_file"
-
-          # Rename class: Idris2Pack -> Idris2PackATYYYYMMDD
-          sed -i "s/^class Idris2Pack < Formula$/class Idris2PackAT${class_suffix} < Formula/" \
-            "$versioned_file"
-
-          # Insert keg_only :versioned_formula after the license line
-          sed -i 's/^\(  license ".*"\)$/\1\n\n  keg_only :versioned_formula/' \
-            "$versioned_file"
-
-      - name: Repackage bottles for versioned formula
+      - name: Create versioned formula and repackage bottles
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          VERSION: ${{ steps.versioned.outputs.version }}
         run: |
-          tag="idris2-pack-${VERSION}"
-          versioned_file="Formula/idris2-pack@${VERSION}.rb"
-          workdir=$(mktemp -d)
-
-          # List bottle assets from the release
-          assets=$(gh release view "$tag" --json assets -q '.assets[].name' \
-            | grep '\.bottle\.tar\.gz$')
-
-          for asset in $assets; do
-            gh release download "$tag" --pattern "$asset" --dir "$workdir"
-
-            # Extract
-            tar -xf "$workdir/$asset" -C "$workdir"
-
-            # Rename internal directory: idris2-pack -> idris2-pack@VERSION
-            mv "$workdir/idris2-pack" "$workdir/idris2-pack@${VERSION}"
-
-            # Rename receipt JSON inside .brew/
-            brew_dir="$workdir/idris2-pack@${VERSION}/${VERSION}/.brew"
-            if [ -d "$brew_dir" ]; then
-              for json in "$brew_dir"/idris2-pack--*.json; do
-                [ -f "$json" ] || continue
-                new_json=$(echo "$json" | sed "s|/idris2-pack--|/idris2-pack@${VERSION}--|")
-                mv "$json" "$new_json"
-              done
-            fi
-
-            # Repackage with versioned name
-            versioned_name=$(echo "$asset" \
-              | sed "s/^idris2-pack-/idris2-pack@${VERSION}--/")
-            tar -czf "$workdir/$versioned_name" \
-              -C "$workdir" "idris2-pack@${VERSION}"
-
-            # Compute new SHA256 and update the versioned formula
-            new_sha=$(sha256sum "$workdir/$versioned_name" | cut -d' ' -f1)
-            os_tag=$(echo "$asset" \
-              | sed "s/^idris2-pack-${VERSION}\.\(.*\)\.bottle\.tar\.gz$/\1/")
-            sed -i "s|\(sha256 cellar: :any, *${os_tag}: *\)\"[a-f0-9]*\"|\1\"${new_sha}\"|" \
-              "$versioned_file"
-
-            # Upload repackaged bottle
-            gh release upload "$tag" "$workdir/$versioned_name" --clobber
-
-            # Cleanup iteration
-            rm -rf \
-              "$workdir/idris2-pack@${VERSION}" \
-              "$workdir/$asset" \
-              "$workdir/$versioned_name"
-          done
-
-          rm -rf "$workdir"
+          version=$(sed -n 's/^  version "\([^"]*\)".*/\1/p' Formula/idris2-pack.rb)
+          python3 scripts/create-versioned-formula.py \
+            --formula Formula/idris2-pack.rb \
+            --version "$version" \
+            --output "Formula/idris2-pack@${version}.rb" \
+            --release-tag "idris2-pack-${version}"
 
       - name: Commit and push versioned formula
-        env:
-          VERSION: ${{ steps.versioned.outputs.version }}
         run: |
-          git add "Formula/idris2-pack@${VERSION}.rb"
-          git commit -m "idris2-pack@${VERSION}: versioned formula snapshot"
+          version=$(sed -n 's/^  version "\([^"]*\)".*/\1/p' Formula/idris2-pack.rb)
+          git add "Formula/idris2-pack@${version}.rb"
+          git commit -m "idris2-pack@${version}: versioned formula snapshot"
           git push origin main
 
       - name: Delete branch
