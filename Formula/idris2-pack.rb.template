@@ -70,6 +70,7 @@ class Idris2Pack < Formula
     # Step 4: Install into libexec
     libexec.install "build/exec/pack"
     libexec.install "build/exec/pack_app"
+    libexec.install "scripts/pack-init.py"
     (libexec/"idris2-toolchain").install Dir[idris2_prefix/"*"]
     (libexec/"COLLECTION").write "{{COLLECTION}}\n"
     (libexec/"IDRIS2_COMMIT").write "{{IDRIS2_COMMIT}}\n"
@@ -105,37 +106,15 @@ class Idris2Pack < Formula
       "export PATH=#{chez_bin}:${LIBEXEC}/idris2-toolchain/bin:$PATH\n" \
       + <<~'WRAPPER'
 
-        # Auto-align pack state with Homebrew-managed collection
+        # Quick stamp check -- skip Python if stamp already matches
         BREW_COLLECTION="$(cat "${LIBEXEC}/COLLECTION" 2>/dev/null)" || true
-        BREW_IDRIS2_COMMIT="$(cat "${LIBEXEC}/IDRIS2_COMMIT" 2>/dev/null)" || true
-
-        if [ -n "${BREW_COLLECTION}" ] && [ -n "${BREW_IDRIS2_COMMIT}" ]; then
+        if [ -n "${BREW_COLLECTION}" ]; then
           PACK_STATE="${PACK_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/pack}"
-          STAMP="${PACK_STATE}/.brew-stamp"
-
-          if [ "$(cat "${STAMP}" 2>/dev/null)" != "${BREW_COLLECTION}" ]; then
-            mkdir -p "${PACK_STATE}"
-
-            # 1. Point pack at the bundled collection
-            printf 'collection = "%s"\n' "${BREW_COLLECTION}" > "${PACK_STATE}/pack.toml"
-
-            # 2. Symlink bundled Idris2 toolchain to avoid 15-20 min rebuild
-            IDRIS2_DIR="${PACK_STATE}/install/${BREW_IDRIS2_COMMIT}/idris2"
-            if [ ! -e "${IDRIS2_DIR}" ]; then
-              mkdir -p "${PACK_STATE}/install/${BREW_IDRIS2_COMMIT}"
-              ln -sfn "${LIBEXEC}/idris2-toolchain" "${IDRIS2_DIR}"
-            fi
-
-            # 3. Clear stale collection DB so pack re-downloads on next run
-            if [ -d "${PACK_STATE}/db" ]; then
-              rm -rf "${PACK_STATE}/db"
-            fi
-
-            # 4. Write stamp to skip setup on subsequent runs
-            printf '%s' "${BREW_COLLECTION}" > "${STAMP}"
-
-            echo "pack: aligned state with collection ${BREW_COLLECTION}" >&2
-          fi
+          STAMP="$(cat "${PACK_STATE}/.brew-stamp" 2>/dev/null)" || true
+          case "${STAMP}" in
+            "${BREW_COLLECTION}:"*) ;;
+            *) python3 "${LIBEXEC}/pack-init.py" "${LIBEXEC}" 2>&1 || true ;;
+          esac
         fi
 
         exec "${LIBEXEC}/pack" "$@"
