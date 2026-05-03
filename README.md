@@ -37,10 +37,8 @@ After upgrading, realign pack's managed state with the new collection:
 
 ```sh
 pack update-db
-pack switch nightly-YYMMDD
+pack switch "$(cat "$(brew --prefix idris2-pack)/libexec/COLLECTION")"
 ```
-
-The collection name is derived from the formula version (e.g., version `2026.04.25` → `nightly-260425`).
 
 To reclaim disk space from old install trees:
 
