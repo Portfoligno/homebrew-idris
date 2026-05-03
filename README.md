@@ -31,16 +31,9 @@ export PATH="$HOME/.local/bin:$PATH"
 brew upgrade idris2-pack
 ```
 
-Use `brew upgrade` rather than `pack update` to get new versions.
+Use `brew upgrade` rather than `pack update` to get new versions. Pack state is automatically aligned with the new collection on first run after upgrade.
 
-After upgrading, realign pack's managed state with the new collection:
-
-```sh
-pack update-db
-pack switch "$(cat "$(brew --prefix idris2-pack)/libexec/COLLECTION")"
-```
-
-To reclaim disk space from old install trees:
+The first `pack` invocation after upgrade downloads the updated collection database (requires network, takes a few seconds). To reclaim disk space from old install trees:
 
 ```sh
 pack gc

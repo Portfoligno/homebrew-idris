@@ -72,6 +72,7 @@ class Idris2Pack < Formula
     libexec.install "build/exec/pack_app"
     (libexec/"idris2-toolchain").install Dir[idris2_prefix/"*"]
     (libexec/"COLLECTION").write "{{COLLECTION}}\n"
+    (libexec/"IDRIS2_COMMIT").write "{{IDRIS2_COMMIT}}\n"
 
     # Step 5: Wrapper scripts
     #
@@ -94,12 +95,52 @@ class Idris2Pack < Formula
     SH
     idris2_script.chmod 0755
 
-    # Pack wrapper sets PATH only — IDRIS2_PREFIX is NOT exported here,
-    # preventing it from leaking to pack's child processes.
-    (bin/"pack").write_env_script(
-      libexec/"pack",
-      PATH: "#{Formula["chezscheme"].opt_bin}:#{libexec}/idris2-toolchain/bin:$PATH",
-    )
+    # Pack wrapper: sets PATH and auto-aligns pack state with the
+    # Homebrew-bundled collection on first run after install/upgrade.
+    # IDRIS2_PREFIX is NOT exported, preventing it from leaking to
+    # pack's child processes.
+    chez_bin = Formula["chezscheme"].opt_bin
+    (bin/"pack").write "#!/bin/sh\n" \
+      "LIBEXEC=#{libexec}\n" \
+      "export PATH=#{chez_bin}:${LIBEXEC}/idris2-toolchain/bin:$PATH\n" \
+      + <<~'WRAPPER'
+
+        # Auto-align pack state with Homebrew-managed collection
+        BREW_COLLECTION="$(cat "${LIBEXEC}/COLLECTION" 2>/dev/null)" || true
+        BREW_IDRIS2_COMMIT="$(cat "${LIBEXEC}/IDRIS2_COMMIT" 2>/dev/null)" || true
+
+        if [ -n "${BREW_COLLECTION}" ] && [ -n "${BREW_IDRIS2_COMMIT}" ]; then
+          PACK_STATE="${PACK_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/pack}"
+          STAMP="${PACK_STATE}/.brew-stamp"
+
+          if [ "$(cat "${STAMP}" 2>/dev/null)" != "${BREW_COLLECTION}" ]; then
+            mkdir -p "${PACK_STATE}"
+
+            # 1. Point pack at the bundled collection
+            printf 'collection = "%s"\n' "${BREW_COLLECTION}" > "${PACK_STATE}/pack.toml"
+
+            # 2. Symlink bundled Idris2 toolchain to avoid 15-20 min rebuild
+            IDRIS2_DIR="${PACK_STATE}/install/${BREW_IDRIS2_COMMIT}/idris2"
+            if [ ! -e "${IDRIS2_DIR}" ]; then
+              mkdir -p "${PACK_STATE}/install/${BREW_IDRIS2_COMMIT}"
+              ln -sfn "${LIBEXEC}/idris2-toolchain" "${IDRIS2_DIR}"
+            fi
+
+            # 3. Clear stale collection DB so pack re-downloads on next run
+            if [ -d "${PACK_STATE}/db" ]; then
+              rm -rf "${PACK_STATE}/db"
+            fi
+
+            # 4. Write stamp to skip setup on subsequent runs
+            printf '%s' "${BREW_COLLECTION}" > "${STAMP}"
+
+            echo "pack: aligned state with collection ${BREW_COLLECTION}" >&2
+          fi
+        fi
+
+        exec "${LIBEXEC}/pack" "$@"
+      WRAPPER
+    (bin/"pack").chmod 0755
   end
 
   def caveats
@@ -114,6 +155,8 @@ class Idris2Pack < Formula
         export PATH="$HOME/.local/bin:$PATH"
 
       Use `brew upgrade idris2-pack` rather than `pack update` to update.
+      Pack state is automatically aligned with the bundled collection on
+      first run after install or upgrade (requires network for DB download).
     EOS
   end
 
