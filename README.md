@@ -33,6 +33,21 @@ brew upgrade idris2-pack
 
 Use `brew upgrade` rather than `pack update` to get new versions.
 
+After upgrading, realign pack's managed state with the new collection:
+
+```sh
+pack update-db
+pack switch nightly-YYMMDD
+```
+
+The collection name is derived from the formula version (e.g., version `2026.04.25` → `nightly-260425`).
+
+To reclaim disk space from old install trees:
+
+```sh
+pack gc
+```
+
 ## How it works
 
 The formula bootstraps the Idris2 compiler from source (pinned to the exact commit specified by a pack-db nightly collection), builds pack's 10 library dependencies, and then builds pack itself. The result is bottled and published as a GitHub Release.
