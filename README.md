@@ -46,6 +46,20 @@ To reclaim disk space from old install trees:
 pack gc
 ```
 
+## Pin to a specific version
+
+Starting from the first release after 2026.05.01, each release publishes a versioned formula that can be installed alongside the latest:
+
+```sh
+brew install Portfoligno/idris/idris2-pack@YYYY.MM.DD
+```
+
+Versioned formulas are keg-only. Access the pinned binary via:
+
+```sh
+"$(brew --prefix idris2-pack@YYYY.MM.DD)/bin/pack" help
+```
+
 ## How it works
 
 The formula bootstraps the Idris2 compiler from source (pinned to the exact commit specified by a pack-db nightly collection), builds pack's 10 library dependencies, and then builds pack itself. The result is bottled and published as a GitHub Release.
