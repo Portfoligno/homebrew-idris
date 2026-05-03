@@ -41,16 +41,16 @@ pack gc
 
 ## Pin to a specific version
 
-Starting from the first release after 2026.05.01, each release publishes a versioned formula that can be installed alongside the latest:
+Starting from version 2026.05.02, each release publishes a versioned formula that can be installed alongside the latest:
 
 ```sh
-brew install Portfoligno/idris/idris2-pack@YYYY.MM.DD
+brew install Portfoligno/idris/idris2-pack@2026.05.02
 ```
 
 Versioned formulas are keg-only. Access the pinned binary via:
 
 ```sh
-"$(brew --prefix idris2-pack@YYYY.MM.DD)/bin/pack" help
+"$(brew --prefix idris2-pack@2026.05.02)/bin/pack" help
 ```
 
 ## How it works
