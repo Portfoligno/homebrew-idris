@@ -159,6 +159,7 @@ class Idris2Pack < Formula
     libexec.install "build/exec/pack"
     libexec.install "build/exec/pack_app"
     (libexec/"idris2-toolchain").install Dir[idris2_prefix/"*"]
+    (libexec/"COLLECTION").write "nightly-260501\n"
 
     # Step 5: Wrapper scripts
     #
@@ -167,6 +168,10 @@ class Idris2Pack < Formula
     # libraries (prelude, base, etc.) via IDRIS2_PREFIX — but only as a
     # fallback, so pack's explicit overrides (during `pack install`) take
     # precedence.
+
+    # Pack defaults to SCHEME=scheme, but Homebrew provides `chez`
+    ln_s Formula["chezscheme"].opt_bin/"chez", libexec/"idris2-toolchain/bin/scheme"
+
     idris2_script = libexec/"idris2-toolchain/bin/idris2"
     idris2_wrapped = libexec/"idris2-toolchain/bin/.idris2-wrapped"
     mv idris2_script, idris2_wrapped

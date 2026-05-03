@@ -25,6 +25,7 @@ Output is a JSON object with the following structure:
 import hashlib
 import io
 import json
+import os
 import re
 import sys
 import tarfile
@@ -302,7 +303,11 @@ def main() -> None:
             }
         )
 
+    # Derive the collection name from the TOML filename (e.g. nightly-260425.toml → nightly-260425)
+    collection_name = os.path.splitext(os.path.basename(sys.argv[1]))[0]
+
     result = {
+        "collection": collection_name,
         "pack": {"url": pack_url, "commit": pack_commit, "sha256": pack_sha},
         "idris2": {"url": idris2_url, "commit": idris2_commit, "sha256": idris2_sha},
         "libraries": libraries,

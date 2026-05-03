@@ -59,12 +59,14 @@ def main() -> None:
     with open(args.template) as f:
         template = f.read()
 
+    collection = resources["collection"]
     pack = resources["pack"]
     idris2 = resources["idris2"]
     libraries = resources["libraries"]
 
     formula = template
     formula = formula.replace("{{VERSION}}", args.version)
+    formula = formula.replace("{{COLLECTION}}", collection)
     formula = formula.replace("{{PACK_COMMIT}}", pack["commit"])
     formula = formula.replace("{{PACK_SHA256}}", pack["sha256"])
     formula = formula.replace("{{IDRIS2_COMMIT}}", idris2["commit"])
