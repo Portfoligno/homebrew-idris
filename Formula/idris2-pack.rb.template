@@ -101,24 +101,28 @@ class Idris2Pack < Formula
     # IDRIS2_PREFIX is NOT exported, preventing it from leaking to
     # pack's child processes.
     chez_bin = Formula["chezscheme"].opt_bin
-    (bin/"pack").write "#!/bin/sh\n" \
-      "LIBEXEC=#{libexec}\n" \
-      "export PATH=#{chez_bin}:${LIBEXEC}/idris2-toolchain/bin:$PATH\n" \
-      + <<~'WRAPPER'
+    pack_header = <<~SH
+      #!/bin/sh
+      LIBEXEC=#{libexec}
+      export PATH=#{chez_bin}:${LIBEXEC}/idris2-toolchain/bin:$PATH
+    SH
+    # The rest of the wrapper uses only shell variables (no Ruby interpolation)
+    pack_body = <<~SH
 
-        # Quick stamp check -- skip Python if stamp already matches
-        BREW_COLLECTION="$(cat "${LIBEXEC}/COLLECTION" 2>/dev/null)" || true
-        if [ -n "${BREW_COLLECTION}" ]; then
-          PACK_STATE="${PACK_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/pack}"
-          STAMP="$(cat "${PACK_STATE}/.brew-stamp" 2>/dev/null)" || true
-          case "${STAMP}" in
-            "${BREW_COLLECTION}:"*) ;;
-            *) python3 "${LIBEXEC}/pack-init.py" "${LIBEXEC}" 2>&1 || true ;;
-          esac
-        fi
+      # Quick stamp check -- skip Python if stamp already matches
+      BREW_COLLECTION="$(cat "${LIBEXEC}/COLLECTION" 2>/dev/null)" || true
+      if [ -n "${BREW_COLLECTION}" ]; then
+        PACK_STATE="${PACK_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/pack}"
+        STAMP="$(cat "${PACK_STATE}/.brew-stamp" 2>/dev/null)" || true
+        case "${STAMP}" in
+          "${BREW_COLLECTION}:"*) ;;
+          *) python3 "${LIBEXEC}/pack-init.py" "${LIBEXEC}" 2>&1 || true ;;
+        esac
+      fi
 
-        exec "${LIBEXEC}/pack" "$@"
-      WRAPPER
+      exec "${LIBEXEC}/pack" "$@"
+    SH
+    (bin/"pack").write pack_header + pack_body
     (bin/"pack").chmod 0755
   end
 
