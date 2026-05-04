@@ -70,7 +70,7 @@ class Idris2Pack < Formula
     # Step 4: Install into libexec
     libexec.install "build/exec/pack"
     libexec.install "build/exec/pack_app"
-    libexec.install tap.path/"scripts/pack-init.py"
+    cp tap.path/"scripts/pack-init.py", libexec/"pack-init.py"
     (libexec/"idris2-toolchain").install Dir[idris2_prefix/"*"]
     (libexec/"COLLECTION").write "{{COLLECTION}}\n"
     (libexec/"IDRIS2_COMMIT").write "{{IDRIS2_COMMIT}}\n"
