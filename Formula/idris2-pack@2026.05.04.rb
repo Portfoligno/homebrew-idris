@@ -1,0 +1,239 @@
+class Idris2PackAT20260504 < Formula
+  desc "Package manager for the Idris 2 programming language"
+  homepage "https://github.com/stefan-hoeck/idris2-pack"
+
+  url "https://github.com/stefan-hoeck/idris2-pack/archive/ffff61f5b0400525d7b0c41eef79e83ebe2b0b52.tar.gz"
+  version "2026.05.04"
+  sha256 "f8b79be795445bfb7440a856db31760bfbfc62f272b9fcef40d2c09a805f6d49"
+  license "BSD-3-Clause"
+
+  bottle do
+    root_url "https://github.com/Portfoligno/homebrew-idris/releases/download/idris2-pack-2026.05.04"
+    sha256 cellar: :any, arm64_sequoia: "89e176d8a4afdaed9cf762a8302cab864c9173ab57f3f072cf34064182eff9d8"
+    sha256 cellar: :any, arm64_sonoma:  "9554ee3f066352a1edd8834f6a4187af7df3845bea94d31c1b1d675a8d428b67"
+  end
+
+  keg_only :versioned_formula
+
+  depends_on "gmp" => :build
+  depends_on "chezscheme"
+
+  resource "idris2" do
+    url "https://github.com/idris-lang/Idris2/archive/214eb45472e15187e6f932c6820a0f0d5542a18e.tar.gz"
+    sha256 "8c880e676c71917abd7033cc6e308758cf72d81f95187ee272669c6d9efc4596"
+  end
+
+  resource "idris2-algebra" do
+    url "https://github.com/stefan-hoeck/idris2-algebra/archive/e279843a99fe250e2fcd928c774ddb6ffe36815b.tar.gz"
+    sha256 "dfe2a3554ba2437c121f962dba2eaca1a2416803306910fc5a1d66283d47f034"
+  end
+
+  resource "idris2-ref1" do
+    url "https://github.com/stefan-hoeck/idris2-ref1/archive/f5b771217295ee692080c08ce5627644c3f86c73.tar.gz"
+    sha256 "4d5318b8da9e167ff52cc5921f2ee82fce6c587e38edfeff61c6c8b1767d5905"
+  end
+
+  resource "idris2-array" do
+    url "https://github.com/stefan-hoeck/idris2-array/archive/8f9c84bc71dae21c6fe430296c6a094f7706748c.tar.gz"
+    sha256 "c6ca326e3114b3011e2c8174afeafd379ae509fdbd389c12ad6d681ca6f75bc7"
+  end
+
+  resource "idris2-bytestring" do
+    url "https://github.com/stefan-hoeck/idris2-bytestring/archive/230d8577f02de22251786f128ec921078da4d880.tar.gz"
+    sha256 "b2c74a34038bb35264587eef3279a9e750f356e25f16856b6da57401b07bf095"
+  end
+
+  resource "idris2-getopts" do
+    url "https://github.com/idris-community/idris2-getopts/archive/0d41b98f83f3707deb0ffbc595ef36b7d9cb9eab.tar.gz"
+    sha256 "904ef2a23953856655e9e255345696932e9540ab5e24e43f448f18945034e7b9"
+  end
+
+  resource "idris2-elab-util" do
+    url "https://github.com/stefan-hoeck/idris2-elab-util/archive/90a2363256cbaafd3b0cc4e2bf36003761b6c4f0.tar.gz"
+    sha256 "cd15b43d5e3bd0631649de8539174691302e29728740f8e29bab09928ef59bac"
+  end
+
+  resource "idris2-refined" do
+    url "https://github.com/stefan-hoeck/idris2-refined/archive/02e43fa2b89076b4096c5f442bac7bea8814d552.tar.gz"
+    sha256 "a3bdc2fd25b09b9c1769d61ef8115f986c369540a7b0cdb2a72eb879d535a4de"
+  end
+
+  resource "idris2-literal" do
+    url "https://github.com/stefan-hoeck/idris2-literal/archive/f0fed86ae9bd5b13d98e4dd18103a6e1f7f7c6b4.tar.gz"
+    sha256 "ce69894d3c8a75c681c738b87719bf0fd87ef6b72e53a72b92e789b3451d9057"
+  end
+
+  resource "idris2-ilex" do
+    url "https://github.com/stefan-hoeck/idris2-ilex/archive/56098d3a15767e68eeafa081345ecf4159cdf8e5.tar.gz"
+    sha256 "15f2fcd092ac7f36b654da2569a7317207902a1057c53f81aa7ec40342edc6a8"
+  end
+
+  resource "idris2-filepath" do
+    url "https://github.com/stefan-hoeck/idris2-filepath/archive/4e8fe9af80d457adc63904ebf58e223ba35c62aa.tar.gz"
+    sha256 "681105b67a528329c12bff59d4359c6b7d2906ad9f8935c1392057ec550d48a2"
+  end
+
+  def install
+    ENV.deparallelize # Idris2 packages must build sequentially
+
+    scheme = Formula["chezscheme"].opt_bin/"chez"
+    ENV["CHEZ"] = scheme
+
+    ENV.append "CPATH", "#{HOMEBREW_PREFIX}/include" if OS.mac? && Hardware::CPU.arm?
+
+    # Step 1: Bootstrap Idris2 compiler from Chez Scheme
+    idris2_prefix = buildpath/"idris2-install"
+
+    resource("idris2").stage do
+      system "make", "bootstrap", "SCHEME=#{scheme}", "PREFIX=#{idris2_prefix}"
+      system "make", "install", "PREFIX=#{idris2_prefix}"
+      system "make", "install-with-src-libs", "PREFIX=#{idris2_prefix}"
+      ENV.prepend_path "PATH", "#{idris2_prefix}/bin"
+      system "make", "install-with-src-api", "PREFIX=#{idris2_prefix}"
+    end
+
+    idris2_bin = idris2_prefix/"bin/idris2"
+
+    # Step 2: Install Idris2 library dependencies (in order)
+    idris2_version = Utils.safe_popen_read(idris2_bin, "--version").strip
+                          .sub(/^Idris 2, version /, "")
+    pkg_path = "#{idris2_prefix}/idris2-#{idris2_version}"
+    ENV["IDRIS2_PACKAGE_PATH"] = pkg_path
+
+    # Redirect library installs to a separate prefix (keep core-only in idris2_prefix)
+    build_deps_prefix = buildpath/"build-deps"
+    ENV["IDRIS2_PREFIX"] = build_deps_prefix.to_s
+
+    resource("idris2-algebra").stage do
+      system idris2_bin, "--install", "algebra.ipkg"
+    end
+
+    resource("idris2-ref1").stage do
+      system idris2_bin, "--install", "ref1.ipkg"
+    end
+
+    resource("idris2-array").stage do
+      system idris2_bin, "--install", "array.ipkg"
+    end
+
+    resource("idris2-bytestring").stage do
+      system idris2_bin, "--install", "bytestring.ipkg"
+    end
+
+    resource("idris2-getopts").stage do
+      system idris2_bin, "--install", "getopts.ipkg"
+    end
+
+    resource("idris2-elab-util").stage do
+      system idris2_bin, "--install", "elab-util.ipkg"
+    end
+
+    resource("idris2-refined").stage do
+      system idris2_bin, "--install", "refined.ipkg"
+    end
+
+    resource("idris2-literal").stage do
+      system idris2_bin, "--install", "literal.ipkg"
+    end
+
+    resource("idris2-ilex").stage do
+      system idris2_bin, "--install", "core/ilex-core.ipkg"
+      system idris2_bin, "--install", "ilex.ipkg"
+      system idris2_bin, "--install", "json/ilex-json.ipkg"
+      system idris2_bin, "--install", "toml/ilex-toml.ipkg"
+    end
+
+    resource("idris2-filepath").stage do
+      system idris2_bin, "--install", "filepath.ipkg"
+    end
+
+    # Symlink support/lib from the bootstrap install so the compiler can find
+    # chez/support.ss and libidris2_support.dylib under the redirected prefix
+    build_deps_ver_dir = build_deps_prefix/"idris2-#{idris2_version}"
+    mkdir_p build_deps_ver_dir
+    ln_s idris2_prefix/"idris2-#{idris2_version}/support", build_deps_ver_dir/"support"
+    ln_s idris2_prefix/"idris2-#{idris2_version}/lib", build_deps_ver_dir/"lib"
+
+    # Step 3: Build pack
+    system idris2_bin, "--build", "pack.ipkg"
+
+    # Step 4: Install into libexec
+    libexec.install "build/exec/pack"
+    libexec.install "build/exec/pack_app"
+    cp tap.path/"scripts/pack-init.py", libexec/"pack-init.py"
+    (libexec/"idris2-toolchain").install Dir[idris2_prefix/"*"]
+    (libexec/"COLLECTION").write "collection\n"
+    (libexec/"IDRIS2_COMMIT").write "214eb45472e15187e6f932c6820a0f0d5542a18e\n"
+
+    # Step 5: Wrapper scripts
+    #
+    # The bundled idris2 binary's compiled-in prefix points to a temporary
+    # build directory that no longer exists. Wrap it so it can find core
+    # libraries (prelude, base, etc.) via IDRIS2_PREFIX — but only as a
+    # fallback, so pack's explicit overrides (during `pack install`) take
+    # precedence.
+
+    # Pack defaults to SCHEME=scheme, but Homebrew provides `chez`
+    ln_s Formula["chezscheme"].opt_bin/"chez", libexec/"idris2-toolchain/bin/scheme"
+
+    idris2_script = libexec/"idris2-toolchain/bin/idris2"
+    idris2_wrapped = libexec/"idris2-toolchain/bin/.idris2-wrapped"
+    mv idris2_script, idris2_wrapped
+    idris2_script.write <<~SH
+      #!/bin/sh
+      export IDRIS2_PREFIX="${IDRIS2_PREFIX:-#{libexec}/idris2-toolchain}"
+      exec "#{idris2_wrapped}" "$@"
+    SH
+    idris2_script.chmod 0755
+
+    # Pack wrapper: sets PATH and auto-aligns pack state with the
+    # Homebrew-bundled collection on first run after install/upgrade.
+    # IDRIS2_PREFIX is NOT exported, preventing it from leaking to
+    # pack's child processes.
+    chez_bin = Formula["chezscheme"].opt_bin
+    pack_header = <<~SH
+      #!/bin/sh
+      LIBEXEC=#{libexec}
+      export PATH=#{chez_bin}:${LIBEXEC}/idris2-toolchain/bin:$PATH
+    SH
+    # The rest of the wrapper uses only shell variables (no Ruby interpolation)
+    pack_body = <<~SH
+
+      # Quick stamp check -- skip Python if stamp already matches
+      BREW_COLLECTION="$(cat "${LIBEXEC}/COLLECTION" 2>/dev/null)" || true
+      if [ -n "${BREW_COLLECTION}" ]; then
+        PACK_STATE="${PACK_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/pack}"
+        STAMP="$(cat "${PACK_STATE}/.brew-stamp" 2>/dev/null)" || true
+        case "${STAMP}" in
+          "${BREW_COLLECTION}:"*) ;;
+          *) python3 "${LIBEXEC}/pack-init.py" "${LIBEXEC}" 2>&1 || true ;;
+        esac
+      fi
+
+      exec "${LIBEXEC}/pack" "$@"
+    SH
+    (bin/"pack").write pack_header + pack_body
+    (bin/"pack").chmod 0755
+  end
+
+  def caveats
+    <<~EOS
+      This formula includes a bundled Idris2 compiler. You can use pack
+      immediately to build and install Idris2 packages:
+        pack build
+        pack install <package>
+
+      Pack installs executables to $HOME/.local/bin by default.
+      Add it to your PATH:
+        export PATH="$HOME/.local/bin:$PATH"
+
+      Use `brew upgrade idris2-pack` rather than `pack update` to update.
+      Pack state is automatically aligned with the bundled collection on
+      first run after install or upgrade (requires network for DB download).
+    EOS
+  end
+
+  test do
+    assert_match "Available commands", shell_output("#{bin}/pack help")
+  end
+end
