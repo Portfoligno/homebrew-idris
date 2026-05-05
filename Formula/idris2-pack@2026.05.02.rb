@@ -7,13 +7,13 @@ class Idris2PackAT20260502 < Formula
   sha256 "f8b79be795445bfb7440a856db31760bfbfc62f272b9fcef40d2c09a805f6d49"
   license "BSD-3-Clause"
 
-  keg_only :versioned_formula
-
   bottle do
     root_url "https://github.com/Portfoligno/homebrew-idris/releases/download/idris2-pack-2026.05.02"
     sha256 cellar: :any, arm64_sequoia: "0372765e4d8cfbc0a8d00eba84c6686271f20a54d6a16880a1b8254f3fda299e"
     sha256 cellar: :any, arm64_sonoma:  "9652042fb7293fb96b259512462c86e1ff225cc97aa843a48f34bd1ad6889f6e"
   end
+
+  keg_only :versioned_formula
 
   depends_on "gmp" => :build
   depends_on "chezscheme"

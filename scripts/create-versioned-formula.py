@@ -43,13 +43,14 @@ def transform_formula(content: str, version: str) -> str:
         flags=re.MULTILINE,
     )
 
-    # Insert keg_only :versioned_formula after the license line
+    # Insert keg_only :versioned_formula after the bottle block
+    # (Homebrew style requires: bottle before keg_only)
     content = re.sub(
-        r'^(  license "[^"]*")$',
+        r"^(  bottle do\n.*?^  end)$",
         r"\1\n\n  keg_only :versioned_formula",
         content,
         count=1,
-        flags=re.MULTILINE,
+        flags=re.MULTILINE | re.DOTALL,
     )
 
     return content
