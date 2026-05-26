@@ -8,6 +8,9 @@ on:
       version:
         required: true
         type: string
+    secrets:
+      DEPLOY_KEY:
+        required: true
   workflow_dispatch:
     inputs:
       collection_file:
@@ -23,86 +26,44 @@ permissions:
   contents: write
   pull-requests: write
 
-defaults:
-  run:
-    shell: sh
+concurrency:
+  group: update-formula
 
 jobs:
   update:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - name: Checkout tap
         uses: actions/checkout@v6
 
-      - name: Set up Python
-        uses: actions/setup-python@v6
-        with:
-          python-version: "3.12"
+      - name: Setup Hell
+        uses: ./.github/actions/setup-hell
 
-      - name: Install dependencies
-        run: pip install tomli
+      - name: Install yq
+        run: sudo snap install yq
 
-      - name: Download collection TOML
-        run: |
-          curl --fail -sL "https://raw.githubusercontent.com/stefan-hoeck/idris2-pack-db/main/collections/${{ inputs.collection_file }}" \
-            -o collection.toml
-
-      - name: Resolve collection
-        id: resolve
-        run: |
-          python scripts/resolve-collection.py collection.toml > resources.json
-          cat resources.json
-
-      - name: Generate formula
-        run: |
-          python scripts/generate-formula.py \
-            --template Formula/idris2-pack.rb.template \
-            --resources resources.json \
-            --version "${{ inputs.version }}" \
-            --output Formula/idris2-pack.rb
+      - name: Update formula
+        run: ./scripts/update-formula.hell "$COLLECTION_FILE" "$VERSION"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          COLLECTION_FILE: ${{ inputs.collection_file }}
+          VERSION: ${{ inputs.version }}
 
       - name: Set up git
         uses: Homebrew/actions/git-user-config@main
 
       # Push via SSH deploy key so the push event triggers CI workflows.
       # GITHUB_TOKEN-created pushes do not trigger other workflows.
-      # Setup: add the public key as a repo deploy key (write access),
-      # and store the private key as the DEPLOY_KEY repository secret.
       - name: Set up SSH deploy key
         uses: webfactory/ssh-agent@v0.10.0
         with:
           ssh-private-key: ${{ secrets.DEPLOY_KEY }}
 
       - name: Push branch and create pull request
+        run: ./scripts/push-update.hell "$VERSION" "$COLLECTION_FILE"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          branch="update/idris2-pack-${{ inputs.version }}"
-          ssh_remote="git@github.com:${{ github.repository }}.git"
-
-          # Delete existing remote branch if present (stale from a previous failed run)
-          if git ls-remote --exit-code origin "refs/heads/$branch" >/dev/null 2>&1; then
-            echo "Deleting stale remote branch $branch"
-            git push "$ssh_remote" --delete "$branch"
-          fi
-
-          git checkout -b "$branch"
-          git add Formula/idris2-pack.rb
-          git commit -m "idris2-pack ${{ inputs.version }}
-
-          Update to nightly collection ${{ inputs.collection_file }}"
-
-          # Push over SSH so the push event triggers CI (tests.yml)
-          git push "$ssh_remote" "$branch"
-
-          # Skip PR creation if one already exists for this branch
-          existing_pr=$(gh pr list --head "$branch" --state open --json number --jq '.[0].number // empty')
-          if [ -n "$existing_pr" ]; then
-            echo "PR #$existing_pr already exists for $branch, skipping creation"
-          else
-            gh pr create \
-              --title "idris2-pack ${{ inputs.version }}" \
-              --body "Automated update to nightly collection \`${{ inputs.collection_file }}\`." \
-              --base main \
-              --head "$branch"
-          fi
+          VERSION: ${{ inputs.version }}
+          COLLECTION_FILE: ${{ inputs.collection_file }}
+          SSH_REMOTE: git@github.com:${{ github.repository }}.git

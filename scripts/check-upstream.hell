@@ -1,0 +1,118 @@
+#!/usr/bin/env hell
+
+-- Check for new upstream nightly collections in idris2-pack-db.
+-- Usage: ./scripts/check-upstream.hell
+--
+-- Compares the version in Formula/idris2-pack.rb against the latest
+-- nightly collection in stefan-hoeck/idris2-pack-db. Also checks the
+-- upstream STATUS.md for failing packages.
+--
+-- Outputs to $GITHUB_OUTPUT:
+--   has_update=true/false
+--   collection_date=YYYY.MM.DD
+--   collection_file=nightly-YYMMDD.toml
+--
+-- Requires GH_TOKEN in environment for GitHub API access.
+
+-- Run a process, capture stdout, die on failure.
+readChecked = \label -> \proc -> do
+  (exitCode, stdout, stderr) <- Text.readProcess proc
+  Exit.exitCode
+    (IO.pure stdout)
+    (\code -> Exit.die (Text.concat [label, " failed with exit code ", Show.show code, ": ", stderr]))
+    exitCode
+
+-- Run a process and die on failure (no stdout capture).
+runChecked = \label -> \proc -> do
+  result <- Process.runProcess proc
+  Exit.exitCode
+    (IO.pure ())
+    (\code -> Exit.die (Text.concat [label, " failed with exit code ", Show.show code]))
+    result
+
+-- Write a key=value pair to the GITHUB_OUTPUT file.
+writeOutput = \key -> \value -> do
+  ghOutput <- Main.readChecked "printenv GITHUB_OUTPUT"
+    (Process.proc "printenv" ["GITHUB_OUTPUT"])
+  Text.appendFile (Text.strip ghOutput) (Text.concat [key, "=", value, "\n"])
+
+main = do
+  -- Step 1: Read current formula version.
+  formulaContents <- Text.readFile "Formula/idris2-pack.rb"
+  let formulaLines = Text.splitOn "\n" formulaContents
+  let versionLines = List.filter (\line -> Text.isInfixOf "version \"" line) formulaLines
+  versionLine <- Maybe.maybe
+    (Exit.die "Could not find version field in Formula/idris2-pack.rb")
+    IO.pure
+    (Maybe.listToMaybe versionLines)
+  let (_before, afterPrefix) = Text.breakOn "version \"" versionLine
+  let withoutPrefix = Text.drop (Text.length "version \"") afterPrefix
+  let (currentVersion, _rest) = Text.breakOn "\"" withoutPrefix
+  Text.putStrLn (Text.concat ["Current formula version: ", currentVersion])
+
+  -- Step 2: Find latest nightly collection from pack-db API.
+  -- Use gh api to list collection files, then jq to find the latest nightly.
+  latestFileRaw <- Main.readChecked "gh api collections"
+    (Process.proc "gh" ["api", "repos/stefan-hoeck/idris2-pack-db/contents/collections", "--jq", ".[].name"])
+
+  -- Filter for nightly- files, sort, and take the last one.
+  let allFiles = Text.splitOn "\n" (Text.strip latestFileRaw)
+  let nightlyFiles = List.filter (\f -> Text.isPrefixOf "nightly-" f) allFiles
+  let sorted = List.sort nightlyFiles
+  latestFile <- Maybe.maybe
+    (Exit.die "No nightly collection files found in pack-db")
+    IO.pure
+    (Maybe.listToMaybe (List.reverse sorted))
+  Text.putStrLn (Text.concat ["Latest nightly: ", latestFile])
+
+  -- Step 3: Extract date from filename.
+  -- nightly-YYMMDD.toml -> 20YY.MM.DD
+  let withoutPrefix2 = Text.drop (Text.length "nightly-") latestFile
+  let (datePart, _ext) = Text.breakOn ".toml" withoutPrefix2
+  -- datePart is YYMMDD, convert to 20YY.MM.DD
+  let yy = Text.take 2 datePart
+  let mm = Text.take 2 (Text.drop 2 datePart)
+  let dd = Text.take 2 (Text.drop 4 datePart)
+  let collectionDate = Text.concat ["20", yy, ".", mm, ".", dd]
+  Text.putStrLn (Text.concat ["Collection date: ", collectionDate])
+
+  -- Step 4: Check upstream build status.
+  statusMd <- Main.readChecked "curl STATUS.md"
+    (Process.proc "curl" ["-sL", "https://raw.githubusercontent.com/stefan-hoeck/idris2-pack-db/main/STATUS.md"])
+
+  if Eq.eq (Text.strip statusMd) ""
+    then Exit.die "Failed to fetch STATUS.md from upstream"
+    else IO.pure ()
+
+  -- Write status to temp file for jq-less parsing.
+  -- Count lines in the Failing Packages section that start with "|" and
+  -- are not the header or separator.
+  Text.writeFile "/tmp/status.md" statusMd
+
+  -- Use grep to count failing package rows (if any).
+  -- Extract between "## Failing Packages" and the next "##".
+  (grepExit, grepOut, _grepErr) <- Text.readProcess
+    (Process.proc "sed" ["-n", "/## Failing Packages/,/^##/p", "/tmp/status.md"])
+
+  let sedLines = Text.splitOn "\n" (Text.strip grepOut)
+  let tableRows = List.filter (\line -> Text.isPrefixOf "|" line) sedLines
+  let notHeaders = List.filter (\line -> Bool.not (Text.isInfixOf "Package" line)) tableRows
+  let dataRows = List.filter (\line -> Bool.not (Text.isInfixOf "---" line)) notHeaders
+  let failingCount = List.length dataRows
+  let buildStatus = if Eq.eq failingCount 0 then "passing" else "failing"
+  Text.putStrLn (Text.concat ["Build status: ", buildStatus, " (", Show.show failingCount, " failing)"])
+
+  -- Step 5: Compare and output.
+  let hasUpdate = if Eq.eq currentVersion collectionDate
+        then "false"
+        else if Eq.eq buildStatus "passing"
+          then "true"
+          else "false"
+
+  if Eq.eq hasUpdate "true"
+    then Text.putStrLn (Text.concat ["Update available: ", currentVersion, " -> ", collectionDate])
+    else Text.putStrLn (Text.concat ["No update needed (current=", currentVersion, ", latest=", collectionDate, ", status=", buildStatus, ")"])
+
+  Main.writeOutput "has_update" hasUpdate
+  Main.writeOutput "collection_date" collectionDate
+  Main.writeOutput "collection_file" latestFile

@@ -3,10 +3,6 @@ on:
   pull_request_target:
     types: [labeled]
 
-defaults:
-  run:
-    shell: sh
-
 env:
   HOMEBREW_DEVELOPER: 1
   HOMEBREW_GITHUB_ACTIONS: 1
@@ -51,23 +47,16 @@ jobs:
         with:
           branch: main
 
+      - name: Setup Hell
+        uses: ./.github/actions/setup-hell
+
       - name: Create versioned formula and repackage bottles
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          version=$(sed -n 's/^  version "\([^"]*\)".*/\1/p' Formula/idris2-pack.rb)
-          python3 scripts/create-versioned-formula.py \
-            --formula Formula/idris2-pack.rb \
-            --version "$version" \
-            --output "Formula/idris2-pack@${version}.rb" \
-            --release-tag "idris2-pack-${version}"
+        run: ./scripts/create-versioned-formula.hell
 
       - name: Commit and push versioned formula
-        run: |
-          version=$(sed -n 's/^  version "\([^"]*\)".*/\1/p' Formula/idris2-pack.rb)
-          git add "Formula/idris2-pack@${version}.rb"
-          git commit -m "idris2-pack@${version}: versioned formula snapshot"
-          git push origin main
+        run: ./scripts/commit-versioned-formula.hell
 
       - name: Delete branch
         if: github.event.pull_request.head.repo.fork == false

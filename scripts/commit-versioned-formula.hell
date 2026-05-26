@@ -1,0 +1,50 @@
+#!/usr/bin/env hell
+
+-- Commit and push a versioned formula snapshot.
+-- Usage: ./scripts/commit-versioned-formula.hell
+--
+-- Reads the version from Formula/idris2-pack.rb, then stages, commits,
+-- and pushes the corresponding versioned formula file.
+
+-- Run a process, capture stdout, die on failure.
+readChecked = \label -> \proc -> do
+  (exitCode, stdout, stderr) <- Text.readProcess proc
+  Exit.exitCode
+    (IO.pure stdout)
+    (\code -> Exit.die (Text.concat [label, " failed with exit code ", Show.show code, ": ", stderr]))
+    exitCode
+
+-- Run a process and die on failure (no stdout capture).
+runChecked = \label -> \proc -> do
+  result <- Process.runProcess proc
+  Exit.exitCode
+    (IO.pure ())
+    (\code -> Exit.die (Text.concat [label, " failed with exit code ", Show.show code]))
+    result
+
+main = do
+  -- Extract version from formula
+  formulaContents <- Text.readFile "Formula/idris2-pack.rb"
+  let formulaLines = Text.splitOn "\n" formulaContents
+  let versionLines = List.filter (\line -> Text.isPrefixOf "version \"" (Text.strip line)) formulaLines
+  versionLine <- Maybe.maybe
+    (Exit.die "Could not find version in Formula/idris2-pack.rb")
+    IO.pure
+    (Maybe.listToMaybe versionLines)
+  let trimmedLine = Text.strip versionLine
+  let withoutPrefix = Text.drop (Text.length "version \"") trimmedLine
+  let (version, _rest) = Text.breakOn "\"" withoutPrefix
+
+  let formulaFile = Text.concat ["Formula/idris2-pack@", version, ".rb"]
+  let commitMsg = Text.concat ["idris2-pack@", version, ": versioned formula snapshot"]
+
+  Main.runChecked "git add"
+    (Process.proc "git" ["add", formulaFile])
+
+  Main.runChecked "git commit"
+    (Process.proc "git" ["commit", "-m", commitMsg])
+
+  Main.runChecked "git push"
+    (Process.proc "git" ["push", "origin", "main"])
+
+  Text.putStrLn (Text.concat ["Committed and pushed ", formulaFile])

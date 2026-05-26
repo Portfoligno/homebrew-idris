@@ -1,0 +1,246 @@
+#!/usr/bin/env hell
+
+-- Update Formula/idris2-pack.rb from an upstream nightly collection.
+-- Usage: ./scripts/update-formula.hell <collection_file> <version>
+--
+-- Downloads the collection TOML from idris2-pack-db, resolves all
+-- library dependencies (commits, SHA256s, install order), and
+-- generates the formula from the template.
+--
+-- Arguments:
+--   collection_file  e.g. nightly-260525.toml
+--   version          e.g. 2026.05.25
+--
+-- Requires GH_TOKEN in environment.
+
+-- Run a process, capture stdout, die on failure.
+readChecked = \label -> \proc -> do
+  (exitCode, stdout, stderr) <- Text.readProcess proc
+  Exit.exitCode
+    (IO.pure stdout)
+    (\code -> Exit.die (Text.concat [label, " failed with exit code ", Show.show code, ": ", stderr]))
+    exitCode
+
+-- Run a process and die on failure (no stdout capture).
+runChecked = \label -> \proc -> do
+  result <- Process.runProcess proc
+  Exit.exitCode
+    (IO.pure ())
+    (\code -> Exit.die (Text.concat [label, " failed with exit code ", Show.show code]))
+    result
+
+-- Download a URL to a local file.
+downloadFile = \url -> \dest -> do
+  Main.runChecked (Text.concat ["download ", url])
+    (Process.proc "curl" ["--fail", "-sL", url, "-o", dest])
+
+-- Compute SHA256 of a local file, returns the hex digest.
+computeSha256 = \path -> do
+  shaOutput <- Main.readChecked (Text.concat ["shasum ", path])
+    (Process.proc "shasum" ["-a", "256", path])
+  let (hash, _rest) = Text.breakOn " " (Text.strip shaOutput)
+  IO.pure hash
+
+-- Query a JSON file with jq, return trimmed stdout.
+jqQuery = \query -> \file -> do
+  out <- Main.readChecked (Text.concat ["jq ", query])
+    (Process.proc "jq" ["-r", query, file])
+  IO.pure (Text.strip out)
+
+-- Build a GitHub archive URL.
+archiveUrl = \owner -> \repo -> \commit ->
+  Text.concat ["https://github.com/", owner, "/", repo, "/archive/", commit, ".tar.gz"]
+
+-- List .ipkg files in a tarball, filtering out tests/docs/examples.
+-- Returns newline-separated relative paths (stripped of top-level dir).
+listIpkgFiles = \tarball -> do
+  tarOutput <- Main.readChecked "tar -tf"
+    (Process.proc "tar" ["-tf", tarball])
+  let allFiles = Text.splitOn "\n" (Text.strip tarOutput)
+  let ipkgFiles = List.filter (\f -> Text.isSuffixOf ".ipkg" f) allFiles
+  -- Filter out test/docs/examples ipkg files (sequential filters)
+  let noTest = List.filter (\f -> Bool.not (Text.isInfixOf "-test" f)) ipkgFiles
+  let noTests = List.filter (\f -> Bool.not (Text.isInfixOf "-tests" f)) noTest
+  let noDocs = List.filter (\f -> Bool.not (Text.isInfixOf "-docs" f)) noTests
+  let noExamples = List.filter (\f -> Bool.not (Text.isInfixOf "-examples" f)) noDocs
+  let noTestDir = List.filter (\f -> Bool.not (Text.isInfixOf "test/" f)) noExamples
+  let libraryIpkgs = List.filter (\f -> Bool.not (Text.isInfixOf "tests/" f)) noTestDir
+  IO.pure libraryIpkgs
+
+-- Extract relative path from a tarball member (strip top-level directory).
+stripTopDir = \path -> do
+  let (_topDir, afterSlash) = Text.breakOn "/" path
+  if Eq.eq afterSlash ""
+    then IO.pure path
+    else IO.pure (Text.drop 1 afterSlash)
+
+-- Process a single library: download, hash, find ipkg install steps.
+-- Returns a tuple encoded as a 4-element list: [name, url, sha256, installSteps]
+-- where installSteps is semicolon-separated.
+processLibrary = \tomlKey -> \owner -> \repo -> \jsonFile -> do
+  let jqPath = Text.concat [".db.", tomlKey, ".commit"]
+  commit <- Main.jqQuery jqPath jsonFile
+
+  if Eq.eq commit "null"
+    then Exit.die (Text.concat ["Required library '", tomlKey, "' not found in collection"])
+    else IO.pure ()
+
+  let url = Main.archiveUrl owner repo commit
+  let tarFile = Text.concat ["/tmp/lib-", tomlKey, ".tar.gz"]
+
+  Main.downloadFile url tarFile
+  sha <- Main.computeSha256 tarFile
+
+  -- List ipkg files
+  ipkgPaths <- Main.listIpkgFiles tarFile
+
+  -- Strip top-level dir from paths
+  relPaths <- Monad.mapM (\p -> Main.stripTopDir p) ipkgPaths
+
+  -- Filter empty strings
+  let cleanPaths = List.filter (\p -> Bool.not (Eq.eq p "")) relPaths
+
+  -- For single-ipkg repos, the install step is just the file.
+  -- For multi-ipkg repos, we use the order as listed in tar (which is
+  -- filesystem order -- adequate for the small set of libs we handle).
+  let installSteps = Text.intercalate ";" cleanPaths
+
+  Text.putStrLn (Text.concat ["  ", repo, ": ", commit, " (", Show.show (List.length cleanPaths), " ipkg files)"])
+  IO.pure (repo, url, sha, installSteps)
+
+-- Build a resource block for the formula.
+buildResourceBlock = \name -> \url -> \sha -> do
+  IO.pure (Text.concat
+    [ "  resource \"", name, "\" do\n"
+    , "    url \"", url, "\"\n"
+    , "    sha256 \"", sha, "\"\n"
+    , "  end"
+    ])
+
+-- Build a library install block for the formula.
+buildInstallBlock = \name -> \installSteps -> do
+  let steps = Text.splitOn ";" installSteps
+  let lines = List.map (\step ->
+        Text.concat ["      system idris2_bin, \"--install\", \"", step, "\""]
+        ) steps
+  let installLines = Text.intercalate "\n" lines
+  IO.pure (Text.concat
+    [ "    resource(\"", name, "\").stage do\n"
+    , installLines, "\n"
+    , "    end"
+    ])
+
+main = do
+  args <- Environment.getArgs
+  let argList = args
+  collectionFile <- Maybe.maybe
+    (Exit.die "Usage: update-formula.hell <collection_file> <version>")
+    IO.pure
+    (Maybe.listToMaybe argList)
+  version <- Maybe.maybe
+    (Exit.die "Usage: update-formula.hell <collection_file> <version>")
+    IO.pure
+    (Maybe.listToMaybe (List.drop 1 argList))
+
+  Text.putStrLn (Text.concat ["Updating formula for collection ", collectionFile, " version ", version])
+
+  -- Step 1: Download collection TOML
+  let tomlUrl = Text.concat
+        [ "https://raw.githubusercontent.com/stefan-hoeck/idris2-pack-db/main/collections/"
+        , collectionFile
+        ]
+  Main.downloadFile tomlUrl "/tmp/collection.toml"
+  Text.putStrLn "Downloaded collection TOML"
+
+  -- Step 2: Convert TOML to JSON via yq
+  jsonRaw <- Main.readChecked "yq toml-to-json"
+    (Process.proc "yq" ["-p", "toml", "-o", "json", "/tmp/collection.toml"])
+  Text.writeFile "/tmp/collection.json" jsonRaw
+  Text.putStrLn "Converted TOML to JSON"
+
+  -- Step 3: Resolve pack
+  packCommit <- Main.jqQuery ".pack.commit // .db.pack.commit" "/tmp/collection.json"
+  if Eq.eq packCommit "null"
+    then Exit.die "pack section not found in collection"
+    else IO.pure ()
+  let packUrl = Main.archiveUrl "stefan-hoeck" "idris2-pack" packCommit
+  Main.downloadFile packUrl "/tmp/pack.tar.gz"
+  packSha <- Main.computeSha256 "/tmp/pack.tar.gz"
+  Text.putStrLn (Text.concat ["pack: ", packCommit])
+
+  -- Step 4: Resolve Idris2
+  idris2Commit <- Main.jqQuery ".idris2.commit" "/tmp/collection.json"
+  if Eq.eq idris2Commit "null"
+    then Exit.die "idris2 section not found in collection"
+    else IO.pure ()
+  let idris2Url = Main.archiveUrl "idris-lang" "Idris2" idris2Commit
+  Main.downloadFile idris2Url "/tmp/idris2.tar.gz"
+  idris2Sha <- Main.computeSha256 "/tmp/idris2.tar.gz"
+  Text.putStrLn (Text.concat ["idris2: ", idris2Commit])
+
+  -- Step 5: Resolve libraries (in dependency order)
+  Text.putStrLn "Resolving libraries..."
+  lib01 <- Main.processLibrary "algebra" "stefan-hoeck" "idris2-algebra" "/tmp/collection.json"
+  lib02 <- Main.processLibrary "ref1" "stefan-hoeck" "idris2-ref1" "/tmp/collection.json"
+  lib03 <- Main.processLibrary "array" "stefan-hoeck" "idris2-array" "/tmp/collection.json"
+  lib04 <- Main.processLibrary "bytestring" "stefan-hoeck" "idris2-bytestring" "/tmp/collection.json"
+  lib05 <- Main.processLibrary "getopts" "idris-community" "idris2-getopts" "/tmp/collection.json"
+  lib06 <- Main.processLibrary "elab-util" "stefan-hoeck" "idris2-elab-util" "/tmp/collection.json"
+  lib07 <- Main.processLibrary "refined" "stefan-hoeck" "idris2-refined" "/tmp/collection.json"
+  lib08 <- Main.processLibrary "literal" "stefan-hoeck" "idris2-literal" "/tmp/collection.json"
+  lib09 <- Main.processLibrary "ilex" "stefan-hoeck" "idris2-ilex" "/tmp/collection.json"
+  lib10 <- Main.processLibrary "filepath" "stefan-hoeck" "idris2-filepath" "/tmp/collection.json"
+
+  -- Step 6: Build resource blocks
+  let (name01, url01, sha01, steps01) = lib01
+  let (name02, url02, sha02, steps02) = lib02
+  let (name03, url03, sha03, steps03) = lib03
+  let (name04, url04, sha04, steps04) = lib04
+  let (name05, url05, sha05, steps05) = lib05
+  let (name06, url06, sha06, steps06) = lib06
+  let (name07, url07, sha07, steps07) = lib07
+  let (name08, url08, sha08, steps08) = lib08
+  let (name09, url09, sha09, steps09) = lib09
+  let (name10, url10, sha10, steps10) = lib10
+
+  rb01 <- Main.buildResourceBlock name01 url01 sha01
+  rb02 <- Main.buildResourceBlock name02 url02 sha02
+  rb03 <- Main.buildResourceBlock name03 url03 sha03
+  rb04 <- Main.buildResourceBlock name04 url04 sha04
+  rb05 <- Main.buildResourceBlock name05 url05 sha05
+  rb06 <- Main.buildResourceBlock name06 url06 sha06
+  rb07 <- Main.buildResourceBlock name07 url07 sha07
+  rb08 <- Main.buildResourceBlock name08 url08 sha08
+  rb09 <- Main.buildResourceBlock name09 url09 sha09
+  rb10 <- Main.buildResourceBlock name10 url10 sha10
+  let resourceBlocks = Text.intercalate "\n\n" [rb01, rb02, rb03, rb04, rb05, rb06, rb07, rb08, rb09, rb10]
+
+  ib01 <- Main.buildInstallBlock name01 steps01
+  ib02 <- Main.buildInstallBlock name02 steps02
+  ib03 <- Main.buildInstallBlock name03 steps03
+  ib04 <- Main.buildInstallBlock name04 steps04
+  ib05 <- Main.buildInstallBlock name05 steps05
+  ib06 <- Main.buildInstallBlock name06 steps06
+  ib07 <- Main.buildInstallBlock name07 steps07
+  ib08 <- Main.buildInstallBlock name08 steps08
+  ib09 <- Main.buildInstallBlock name09 steps09
+  ib10 <- Main.buildInstallBlock name10 steps10
+  let installBlocks = Text.intercalate "\n\n" [ib01, ib02, ib03, ib04, ib05, ib06, ib07, ib08, ib09, ib10]
+
+  -- Derive collection name from filename (strip .toml extension)
+  let (collectionName, _ext) = Text.breakOn ".toml" collectionFile
+
+  -- Step 7: Read template and generate formula
+  template <- Text.readFile "Formula/idris2-pack.rb.template"
+
+  let formula1 = Text.replace "{{VERSION}}" version template
+  let formula2 = Text.replace "{{COLLECTION}}" collectionName formula1
+  let formula3 = Text.replace "{{PACK_COMMIT}}" packCommit formula2
+  let formula4 = Text.replace "{{PACK_SHA256}}" packSha formula3
+  let formula5 = Text.replace "{{IDRIS2_COMMIT}}" idris2Commit formula4
+  let formula6 = Text.replace "{{IDRIS2_SHA256}}" idris2Sha formula5
+  let formula7 = Text.replace "{{RESOURCE_BLOCKS}}" resourceBlocks formula6
+  let formula8 = Text.replace "{{LIBRARY_INSTALL_BLOCKS}}" installBlocks formula7
+
+  Text.writeFile "Formula/idris2-pack.rb" formula8
+  Text.putStrLn "Formula written to Formula/idris2-pack.rb"

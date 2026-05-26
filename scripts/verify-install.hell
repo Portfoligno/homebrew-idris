@@ -1,0 +1,59 @@
+#!/usr/bin/env hell
+
+-- Verify that published bottles for idris2-pack are installable and functional.
+-- Usage: ./scripts/verify-install.hell
+--
+-- Checks:
+--   1. Installs idris2-pack from the Portfoligno/idris tap
+--   2. Verifies `pack help` runs
+--   3. Checks that the bottle was used (not built from source)
+
+-- Run a process, capture stdout, die on failure.
+readChecked = \label -> \proc -> do
+  (exitCode, stdout, stderr) <- Text.readProcess proc
+  Exit.exitCode
+    (IO.pure stdout)
+    (\code -> Exit.die (Text.concat [label, " failed with exit code ", Show.show code, ": ", stderr]))
+    exitCode
+
+-- Run a process and die on failure (no stdout capture).
+runChecked = \label -> \proc -> do
+  result <- Process.runProcess proc
+  Exit.exitCode
+    (IO.pure ())
+    (\code -> Exit.die (Text.concat [label, " failed with exit code ", Show.show code]))
+    result
+
+main = do
+  -- Step 1: Tap and install
+  Text.putStrLn "==> Tapping Portfoligno/idris"
+  Main.runChecked "brew tap"
+    (Process.proc "brew" ["tap", "Portfoligno/idris"])
+
+  Text.putStrLn "==> Installing Portfoligno/idris/idris2-pack"
+  Main.runChecked "brew install"
+    (Process.proc "brew" ["install", "Portfoligno/idris/idris2-pack"])
+
+  -- Step 2: Verify binary
+  Text.putStrLn "==> Verifying binary"
+  Main.runChecked "pack help"
+    (Process.proc "pack" ["help"])
+  Text.putStrLn "  pack help: OK"
+
+  -- Step 3: Check bottle installation via brew info JSON
+  Text.putStrLn "==> Checking bottle installation"
+  infoJson <- Main.readChecked "brew info"
+    (Process.proc "brew" ["info", "--json=v2", "idris2-pack"])
+
+  -- Write JSON to temp file for jq to read
+  Text.writeFile "/tmp/brew-info.json" infoJson
+
+  poured <- Main.readChecked "jq poured_from_bottle"
+    (Process.proc "jq" ["-r", ".formulae[0].installed[0].poured_from_bottle", "/tmp/brew-info.json"])
+
+  let pouredTrimmed = Text.strip poured
+  if Eq.eq pouredTrimmed "true"
+    then Text.putStrLn "  Installed from bottle: YES"
+    else Exit.die "idris2-pack was NOT installed from a bottle"
+
+  Text.putStrLn "==> All checks passed"

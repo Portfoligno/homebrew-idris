@@ -1,0 +1,165 @@
+#!/usr/bin/env hell
+
+-- Create a versioned formula snapshot and repackage bottles.
+-- Usage: ./scripts/create-versioned-formula.hell
+--
+-- Reads the version from Formula/idris2-pack.rb, transforms it into a
+-- versioned formula (idris2-pack@VERSION.rb), repackages bottle assets
+-- with versioned internal paths, and uploads them back to the release.
+--
+-- Requires GH_TOKEN in environment.
+
+-- Run a process, capture stdout, die on failure.
+readChecked = \label -> \proc -> do
+  (exitCode, stdout, stderr) <- Text.readProcess proc
+  Exit.exitCode
+    (IO.pure stdout)
+    (\code -> Exit.die (Text.concat [label, " failed with exit code ", Show.show code, ": ", stderr]))
+    exitCode
+
+-- Run a process and die on failure (no stdout capture).
+runChecked = \label -> \proc -> do
+  result <- Process.runProcess proc
+  Exit.exitCode
+    (IO.pure ())
+    (\code -> Exit.die (Text.concat [label, " failed with exit code ", Show.show code]))
+    result
+
+-- Extract the version string from the main formula.
+extractVersion = do
+  formulaContents <- Text.readFile "Formula/idris2-pack.rb"
+  let formulaLines = Text.splitOn "\n" formulaContents
+  let versionLines = List.filter (\line -> Text.isPrefixOf "version \"" (Text.strip line)) formulaLines
+  versionLine <- Maybe.maybe
+    (Exit.die "Could not find version in Formula/idris2-pack.rb")
+    IO.pure
+    (Maybe.listToMaybe versionLines)
+  let trimmedLine = Text.strip versionLine
+  let withoutPrefix = Text.drop (Text.length "version \"") trimmedLine
+  let (ver, _rest) = Text.breakOn "\"" withoutPrefix
+  IO.pure ver
+
+-- Process a single bottle asset: download, repackage, update SHA, upload.
+-- Returns (os_tag, new_sha) for updating the formula.
+processBottle = \releaseTag -> \version -> \assetName -> do
+  Text.putStrLn (Text.concat ["Repackaging ", assetName, " ..."])
+  let workdir = "/tmp/bottle-work"
+  Main.runChecked "mkdir workdir"
+    (Process.proc "mkdir" ["-p", workdir])
+
+  -- Download the asset
+  Main.runChecked (Text.concat ["gh release download ", assetName])
+    (Process.proc "gh" ["release", "download", releaseTag, "--pattern", assetName, "--dir", workdir])
+
+  let assetPath = Text.concat [workdir, "/", assetName]
+
+  -- Extract the bottle
+  Main.runChecked "tar extract"
+    (Process.proc "tar" ["-xf", assetPath, "-C", workdir])
+
+  -- Rename the top-level directory
+  let srcDir = Text.concat [workdir, "/idris2-pack"]
+  let dstDir = Text.concat [workdir, "/idris2-pack@", version]
+  Main.runChecked "mv directory"
+    (Process.proc "mv" [srcDir, dstDir])
+
+  -- Rename receipt JSON inside .brew/ directory
+  let brewDir = Text.concat [dstDir, "/", version, "/.brew"]
+  (lsExit, lsOut, _lsErr) <- Text.readProcess
+    (Process.proc "find" [brewDir, "-name", "idris2-pack--*", "-type", "f"])
+  Exit.exitCode
+    (do
+      let files = List.filter (\f -> Bool.not (Eq.eq f "")) (Text.splitOn "\n" (Text.strip lsOut))
+      Monad.mapM_ (\oldPath -> do
+        -- Extract filename from path by finding everything after last /
+        let reversedPath = Text.reverse oldPath
+        let (revName, _revRest) = Text.breakOn "/" reversedPath
+        let oldName = Text.reverse revName
+        let newName = Text.replace "idris2-pack--" (Text.concat ["idris2-pack@", version, "--"]) oldName
+        let newPath = Text.replace oldName newName oldPath
+        Main.runChecked "rename receipt"
+          (Process.proc "mv" [oldPath, newPath])
+        ) files
+    )
+    (\_ -> IO.pure ())
+    lsExit
+
+  -- Create versioned asset name
+  let versionedName = Text.replace "idris2-pack-" (Text.concat ["idris2-pack@", version, "--"]) assetName
+  let versionedPath = Text.concat [workdir, "/", versionedName]
+
+  -- Repackage
+  Main.runChecked "tar repackage"
+    (Process.proc "tar" ["-czf", versionedPath, "-C", workdir, Text.concat ["idris2-pack@", version]])
+
+  -- Compute SHA256
+  sha <- Main.readChecked "shasum"
+    (Process.proc "shasum" ["-a", "256", versionedPath])
+  let (newSha, _rest) = Text.breakOn " " (Text.strip sha)
+
+  -- Extract OS tag from asset name
+  -- idris2-pack-2026.05.25.arm64_sequoia.bottle.tar.gz -> arm64_sequoia
+  let withoutFormula = Text.replace (Text.concat ["idris2-pack-", version, "."]) "" assetName
+  let (osTag, _bottleSuffix) = Text.breakOn ".bottle.tar.gz" withoutFormula
+
+  -- Upload repackaged bottle
+  Main.runChecked "gh release upload"
+    (Process.proc "gh" ["release", "upload", releaseTag, versionedPath, "--clobber"])
+
+  -- Cleanup
+  Main.runChecked "cleanup"
+    (Process.proc "rm" ["-rf", workdir])
+
+  Text.putStrLn (Text.concat ["  -> ", versionedName, " (sha256: ", newSha, ")"])
+  IO.pure (osTag, newSha)
+
+main = do
+  -- Extract version from formula
+  version <- Main.extractVersion
+  Text.putStrLn (Text.concat ["Version: ", version])
+
+  let releaseTag = Text.concat ["idris2-pack-", version]
+  let outputPath = Text.concat ["Formula/idris2-pack@", version, ".rb"]
+
+  -- Read and transform the formula
+  content <- Text.readFile "Formula/idris2-pack.rb"
+
+  -- Rename class: Idris2Pack -> Idris2PackATYYYYMMDD (dots removed from version)
+  let classSuffix = Text.replace "." "" version
+  let content2 = Text.replace "class Idris2Pack < Formula" (Text.concat ["class Idris2PackAT", classSuffix, " < Formula"]) content
+
+  -- Insert keg_only after the bottle end block
+  let content3 = Text.replace "  end\n\n  depends_on" "  end\n\n  keg_only :versioned_formula\n\n  depends_on" content2
+
+  -- Write intermediate formula (will update SHAs after repackaging)
+  Text.writeFile outputPath content3
+
+  -- List bottle assets from the release
+  (ghExit, ghOut, _ghErr) <- Text.readProcess
+    (Process.proc "gh" ["release", "view", releaseTag, "--json", "assets", "-q", ".assets[].name"])
+
+  assetsRaw <- Exit.exitCode
+    (IO.pure (Text.strip ghOut))
+    (\code -> do
+      Text.putStrLn "WARNING: No release found or no assets"
+      IO.pure ""
+    )
+    ghExit
+
+  let allAssets = Text.splitOn "\n" assetsRaw
+  let bottleAssets = List.filter (\a -> Text.isSuffixOf ".bottle.tar.gz" a) allAssets
+
+  -- Process each bottle and collect (osTag, sha) pairs
+  if Eq.eq (List.length bottleAssets) 0
+    then Text.putStrLn "WARNING: No bottle assets found"
+    else do
+      -- Process bottles and update formula SHA256s
+      Monad.mapM_ (\assetName -> do
+        (osTag, newSha) <- Main.processBottle releaseTag version assetName
+        -- Update SHA in the versioned formula using sed
+        -- Pattern: sha256 cellar: :any, <os_tag>: "old_sha"
+        Main.runChecked "sed update SHA"
+          (Process.proc "sed" ["-i", Text.concat ["s/\\(sha256 cellar: :any, *", osTag, ": *\\)\"[a-f0-9]*\"/\\1\"", newSha, "\"/"], outputPath])
+        ) bottleAssets
+
+  Text.putStrLn (Text.concat ["Versioned formula written to ", outputPath])

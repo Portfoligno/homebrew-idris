@@ -1,0 +1,44 @@
+#!/usr/bin/env hell
+
+-- Extract the formula name from an update branch name.
+-- Usage: ./scripts/extract-formula-name.hell
+--
+-- Reads GITHUB_REF (e.g. refs/heads/update/idris2-pack-2026.05.25)
+-- and extracts the formula name (idris2-pack), writing it to
+-- $GITHUB_OUTPUT as name=<formula>.
+--
+-- The branch format is: update/<formula>-<version>
+-- We strip the prefix "refs/heads/update/" and remove the last
+-- hyphen-separated segment (the version).
+
+-- Run a process, capture stdout, die on failure.
+readChecked = \label -> \proc -> do
+  (exitCode, stdout, stderr) <- Text.readProcess proc
+  Exit.exitCode
+    (IO.pure stdout)
+    (\code -> Exit.die (Text.concat [label, " failed with exit code ", Show.show code, ": ", stderr]))
+    exitCode
+
+main = do
+  -- Read GITHUB_REF from environment
+  refRaw <- Main.readChecked "printenv GITHUB_REF"
+    (Process.proc "printenv" ["GITHUB_REF"])
+  let ref = Text.strip refRaw
+
+  -- Strip the refs/heads/update/ prefix
+  let withoutPrefix = Text.drop (Text.length "refs/heads/update/") ref
+
+  -- Strip the last hyphen-separated segment (version).
+  -- e.g. "idris2-pack-2026.05.25" -> "idris2-pack"
+  -- Reverse the string, find first '-', take the rest, reverse back.
+  let reversed = Text.reverse withoutPrefix
+  let (_versionRev, dashAndName) = Text.breakOn "-" reversed
+  let nameRev = Text.drop 1 dashAndName
+  let formulaName = Text.reverse nameRev
+
+  Text.putStrLn (Text.concat ["Formula name: ", formulaName])
+
+  -- Write to GITHUB_OUTPUT
+  ghOutput <- Main.readChecked "printenv GITHUB_OUTPUT"
+    (Process.proc "printenv" ["GITHUB_OUTPUT"])
+  Text.appendFile (Text.strip ghOutput) (Text.concat ["name=", formulaName, "\n"])

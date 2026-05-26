@@ -5,10 +5,6 @@ on:
       - main
       - update/**
 
-defaults:
-  run:
-    shell: sh
-
 env:
   HOMEBREW_DEVELOPER: 1
   HOMEBREW_GITHUB_ACTIONS: 1
@@ -42,8 +38,8 @@ jobs:
         uses: actions/cache@v5
         with:
           path: ${{ steps.set-up-homebrew.outputs.gems-path }}
-          key: ${{ matrix.os }}-rubygems-${{ steps.set-up-homebrew.outputs.gems-hash }}
-          restore-keys: ${{ matrix.os }}-rubygems-
+          key: ${{ matrix.os }}-${{ runner.arch }}-rubygems-${{ steps.set-up-homebrew.outputs.gems-hash }}
+          restore-keys: ${{ matrix.os }}-${{ runner.arch }}-rubygems-
 
       - name: Cleanup before
         run: brew test-bot --only-cleanup-before
@@ -54,24 +50,26 @@ jobs:
       - name: Tap syntax
         run: brew test-bot --only-tap-syntax
 
+      - name: Setup Hell
+        if: startsWith(github.ref, 'refs/heads/update/')
+        uses: ./.github/actions/setup-hell
+
       - name: Extract formula from branch
         id: formula
         if: startsWith(github.ref, 'refs/heads/update/')
-        run: |
-          # Branch is update/<formula>-<version>; strip prefix and last hyphenated segment
-          name="${GITHUB_REF#refs/heads/update/}"
-          name="${name%-*}"
-          echo "name=$name" >> "$GITHUB_OUTPUT"
+        run: ./scripts/extract-formula-name.hell
 
       - name: Build bottles
         id: build
         if: startsWith(github.ref, 'refs/heads/update/')
+        env:
+          FORMULA_NAME: ${{ steps.formula.outputs.name }}
         run: >
           brew test-bot
           --only-formulae
           --only-json-tab
           --skip-dependents
-          --testing-formulae=${{ steps.formula.outputs.name }}
+          --testing-formulae="$FORMULA_NAME"
         timeout-minutes: 90
 
       - name: Upload bottles as artifact

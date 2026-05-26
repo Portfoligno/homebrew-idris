@@ -1,0 +1,67 @@
+name: Setup Hell
+description: Set up Hell for CI use — pre-built binaries on all platforms
+
+inputs:
+  hell-version:
+    description: Hell release tag
+    required: false
+    default: "2026-05-02"
+
+runs:
+  using: composite
+  steps:
+    - name: Restore Hell binary cache
+      uses: actions/cache/restore@v4
+      id: hell-cache
+      with:
+        path: ~/.local/bin/hell
+        key: hell-${{ runner.os }}-${{ runner.arch }}-${{ inputs.hell-version }}
+
+    - name: Create install directory
+      if: steps.hell-cache.outputs.cache-hit != 'true'
+      shell: bash
+      run: mkdir -p ~/.local/bin
+
+    # --- Linux: download pre-built binary from upstream chrisdone/hell ---
+
+    - name: Download Hell binary (Linux)
+      if: runner.os == 'Linux' && steps.hell-cache.outputs.cache-hit != 'true'
+      shell: bash
+      run: curl -fsSL -o "$HOME/.local/bin/hell" "https://github.com/chrisdone/hell/releases/download/${{ inputs.hell-version }}/hell-linux-amd64"
+
+    # --- macOS: download pre-built binary from Portfoligno/homebrew-hell ---
+
+    - name: Download Hell tarball (macOS ARM64)
+      if: runner.os == 'macOS' && runner.arch == 'ARM64' && steps.hell-cache.outputs.cache-hit != 'true'
+      shell: bash
+      run: curl -fsSL "https://github.com/Portfoligno/homebrew-hell/releases/download/${{ inputs.hell-version }}/hell-aarch64-apple-darwin.tar.gz" -o /tmp/hell.tar.gz
+
+    - name: Download Hell tarball (macOS X64)
+      if: runner.os == 'macOS' && runner.arch == 'X64' && steps.hell-cache.outputs.cache-hit != 'true'
+      shell: bash
+      run: curl -fsSL "https://github.com/Portfoligno/homebrew-hell/releases/download/${{ inputs.hell-version }}/hell-x86_64-apple-darwin.tar.gz" -o /tmp/hell.tar.gz
+
+    - name: Extract Hell binary (macOS)
+      if: runner.os == 'macOS' && steps.hell-cache.outputs.cache-hit != 'true'
+      shell: bash
+      run: tar -xzf /tmp/hell.tar.gz -C "$HOME/.local/bin" hell
+
+    # --- Shared: finalize ---
+
+    - name: Make Hell executable
+      if: steps.hell-cache.outputs.cache-hit != 'true'
+      shell: bash
+      run: chmod +x ~/.local/bin/hell
+
+    - name: Save Hell binary cache
+      if: steps.hell-cache.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v4
+      with:
+        path: ~/.local/bin/hell
+        key: ${{ steps.hell-cache.outputs.cache-primary-key }}
+
+    # Bootstrap: GITHUB_PATH requires a shell redirect — there is no
+    # single-command alternative in composite actions.
+    - name: Add Hell to PATH
+      shell: bash
+      run: echo "$HOME/.local/bin" >> "$GITHUB_PATH"
