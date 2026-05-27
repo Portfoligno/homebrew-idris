@@ -230,17 +230,22 @@ main = do
   -- Derive collection name from filename (strip .toml extension)
   let (collectionName, _ext) = Text.breakOn ".toml" collectionFile
 
-  -- Step 7: Read template and generate formula
-  template <- Text.readFile "Formula/idris2-pack.rb.template"
+  -- Step 7: Generate formula via ERB
+  env <- Environment.getEnvironment
+  let erbEnv =
+        List.cons ("VERSION", version)
+        (List.cons ("COLLECTION", collectionName)
+        (List.cons ("PACK_COMMIT", packCommit)
+        (List.cons ("PACK_SHA256", packSha)
+        (List.cons ("IDRIS2_COMMIT", idris2Commit)
+        (List.cons ("IDRIS2_SHA256", idris2Sha)
+        (List.cons ("RESOURCE_BLOCKS", resourceBlocks)
+        (List.cons ("LIBRARY_INSTALL_BLOCKS", installBlocks)
+        env)))))))
 
-  let formula1 = Text.replace "{{VERSION}}" version template
-  let formula2 = Text.replace "{{COLLECTION}}" collectionName formula1
-  let formula3 = Text.replace "{{PACK_COMMIT}}" packCommit formula2
-  let formula4 = Text.replace "{{PACK_SHA256}}" packSha formula3
-  let formula5 = Text.replace "{{IDRIS2_COMMIT}}" idris2Commit formula4
-  let formula6 = Text.replace "{{IDRIS2_SHA256}}" idris2Sha formula5
-  let formula7 = Text.replace "{{RESOURCE_BLOCKS}}" resourceBlocks formula6
-  let formula8 = Text.replace "{{LIBRARY_INSTALL_BLOCKS}}" installBlocks formula7
+  formula <- Main.readChecked "erb"
+    (Process.setEnv erbEnv
+      (Process.proc "erb" ["Formula/idris2-pack.rb.erb"]))
 
-  Text.writeFile "Formula/idris2-pack.rb" formula8
+  Text.writeFile "Formula/idris2-pack.rb" formula
   Text.putStrLn "Formula written to Formula/idris2-pack.rb"

@@ -37,9 +37,9 @@ Build steps:
 
 The `libexec/` layout isolates the toolchain from the user's PATH. Only the `pack` wrapper is public.
 
-### Template (`Formula/idris2-pack.rb.template`)
+### Template (`Formula/idris2-pack.rb.erb`)
 
-A Ruby file with `{{PLACEHOLDER}}` markers, filled by `generate-formula.py`. Placeholders:
+An ERB template with `<%= ENV.fetch('PLACEHOLDER') %>` markers, rendered by `erb` via `update-formula.hell`. Placeholders:
 - `{{VERSION}}` — CalVer version
 - `{{PACK_COMMIT}}`, `{{PACK_SHA256}}` — pack source archive
 - `{{IDRIS2_COMMIT}}`, `{{IDRIS2_SHA256}}` — Idris2 source archive
