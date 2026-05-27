@@ -70,9 +70,12 @@ main = do
   let withoutPrefix2 = Text.drop (Text.length "nightly-") latestFile
   let (datePart, _ext) = Text.breakOn ".toml" withoutPrefix2
   -- datePart is YYMMDD, convert to 20YY.MM.DD
-  let yy = Text.take 2 datePart
-  let mm = Text.take 2 (Text.drop 2 datePart)
-  let dd = Text.take 2 (Text.drop 4 datePart)
+  let yyFmt = "YY"
+  let mmFmt = "MM"
+  let yymmFmt = "YYMM"
+  let yy = Text.take (Text.length yyFmt) datePart
+  let mm = Text.take (Text.length mmFmt) (Text.drop (Text.length yyFmt) datePart)
+  let dd = Text.drop (Text.length yymmFmt) datePart
   let collectionDate = Text.concat ["20", yy, ".", mm, ".", dd]
   Text.putStrLn (Text.concat ["Collection date: ", collectionDate])
 

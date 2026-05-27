@@ -27,19 +27,25 @@ runs:
     - name: Download Hell binary (Linux)
       if: runner.os == 'Linux' && steps.hell-cache.outputs.cache-hit != 'true'
       shell: bash
-      run: curl -fsSL -o "$HOME/.local/bin/hell" "https://github.com/chrisdone/hell/releases/download/${{ inputs.hell-version }}/hell-linux-amd64"
+      env:
+        HELL_VERSION: ${{ inputs.hell-version }}
+      run: curl -fsSL -o "$HOME/.local/bin/hell" "https://github.com/chrisdone/hell/releases/download/$HELL_VERSION/hell-linux-amd64"
 
     # --- macOS: download pre-built binary from Portfoligno/homebrew-hell ---
 
     - name: Download Hell tarball (macOS ARM64)
       if: runner.os == 'macOS' && runner.arch == 'ARM64' && steps.hell-cache.outputs.cache-hit != 'true'
       shell: bash
-      run: curl -fsSL "https://github.com/Portfoligno/homebrew-hell/releases/download/${{ inputs.hell-version }}/hell-aarch64-apple-darwin.tar.gz" -o /tmp/hell.tar.gz
+      env:
+        HELL_VERSION: ${{ inputs.hell-version }}
+      run: curl -fsSL "https://github.com/Portfoligno/homebrew-hell/releases/download/$HELL_VERSION/hell-aarch64-apple-darwin.tar.gz" -o /tmp/hell.tar.gz
 
     - name: Download Hell tarball (macOS X64)
       if: runner.os == 'macOS' && runner.arch == 'X64' && steps.hell-cache.outputs.cache-hit != 'true'
       shell: bash
-      run: curl -fsSL "https://github.com/Portfoligno/homebrew-hell/releases/download/${{ inputs.hell-version }}/hell-x86_64-apple-darwin.tar.gz" -o /tmp/hell.tar.gz
+      env:
+        HELL_VERSION: ${{ inputs.hell-version }}
+      run: curl -fsSL "https://github.com/Portfoligno/homebrew-hell/releases/download/$HELL_VERSION/hell-x86_64-apple-darwin.tar.gz" -o /tmp/hell.tar.gz
 
     - name: Extract Hell binary (macOS)
       if: runner.os == 'macOS' && steps.hell-cache.outputs.cache-hit != 'true'

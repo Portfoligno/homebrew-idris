@@ -33,7 +33,7 @@ main = do
   -- Reverse the string, find first '-', take the rest, reverse back.
   let reversed = Text.reverse withoutPrefix
   let (_versionRev, dashAndName) = Text.breakOn "-" reversed
-  let nameRev = Text.drop 1 dashAndName
+  let nameRev = Text.drop (Text.length "-") dashAndName
   let formulaName = Text.reverse nameRev
 
   Text.putStrLn (Text.concat ["Formula name: ", formulaName])

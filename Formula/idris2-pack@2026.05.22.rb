@@ -160,7 +160,7 @@ class Idris2PackAT20260522 < Formula
     # Step 4: Install into libexec
     libexec.install "build/exec/pack"
     libexec.install "build/exec/pack_app"
-    cp tap.path/"scripts/pack-init.py", libexec/"pack-init.py"
+    cp tap.path/"scripts/pack-init.idr", libexec/"pack-init.idr"
     (libexec/"idris2-toolchain").install Dir[idris2_prefix/"*"]
     (libexec/"COLLECTION").write "collection\n"
     (libexec/"IDRIS2_COMMIT").write "6a54860ee748accc1a2be1da4a77727b5be4c1dc\n"
@@ -199,14 +199,14 @@ class Idris2PackAT20260522 < Formula
     # The rest of the wrapper uses only shell variables (no Ruby interpolation)
     pack_body = <<~SH
 
-      # Quick stamp check -- skip Python if stamp already matches
+      # Quick stamp check -- skip init if stamp already matches
       BREW_COLLECTION="$(cat "${LIBEXEC}/COLLECTION" 2>/dev/null)" || true
       if [ -n "${BREW_COLLECTION}" ]; then
         PACK_STATE="${PACK_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/pack}"
         STAMP="$(cat "${PACK_STATE}/.brew-stamp" 2>/dev/null)" || true
         case "${STAMP}" in
           "${BREW_COLLECTION}:"*) ;;
-          *) python3 "${LIBEXEC}/pack-init.py" "${LIBEXEC}" 2>&1 || true ;;
+          *) PACK_INIT_LIBEXEC="${LIBEXEC}" "${LIBEXEC}/idris2-toolchain/bin/idris2" --exec main "${LIBEXEC}/pack-init.idr" 2>&1 || true ;;
         esac
       fi
 

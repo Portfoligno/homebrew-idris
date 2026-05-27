@@ -19,9 +19,33 @@ import Data.List1
 import Data.String
 import System
 import System.Directory
+import System.File.Handle
 import System.File.ReadWrite
 
 %default total
+
+-- ===========================================================================
+-- FFI: Symlink primitives (Chez backend, single-expression wrappers)
+-- ===========================================================================
+
+||| Check if path is a symbolic link.
+||| Chez built-in: file-symbolic-link? returns #t/#f.
+%foreign "scheme,chez:(lambda (path) (if (file-symbolic-link? path) 1 0))"
+prim__isSymlink : String -> PrimIO Int
+
+||| Create a symbolic link: symlink(target, linkpath).
+||| Returns 0 on success, -1 on error.
+%foreign "scheme,chez:(lambda (target link) ((foreign-procedure \"symlink\" (string string) int) target link))"
+prim__symlink : String -> String -> PrimIO Int
+
+||| Read a symbolic link target: readlink(path, buf, 4096).
+||| Returns the target string, or "" on error.
+%foreign "scheme,chez:(lambda (path) (let* ([bv (make-bytevector 4096)] [n ((foreign-procedure \"readlink\" (string u8* int) int) path bv 4096)]) (if (< n 0) \"\" (utf8->string (bytevector-copy bv 0 n)))))"
+prim__readlink : String -> PrimIO String
+
+-- ===========================================================================
+-- File I/O wrappers (stdlib + FFI)
+-- ===========================================================================
 
 -- Read entire file contents, returning empty string on failure.
 covering
@@ -35,69 +59,103 @@ readFileOr path fallback = do
 covering
 pathExists : String -> IO Bool
 pathExists path = do
-  Right _ <- openFile path Read
+  Right h <- openFile path Read
     | Left _ => do
         -- Could be a directory. Check via listing.
         Right _ <- listDir path
           | Left _ => pure False
         pure True
+  closeFile h
   pure True
 
--- Check if a path is a symlink by attempting readlink.
+-- Symlink check result.
+-- IsLink: the path is a symlink.
+-- NotLink: the path exists but is not a symlink.
+-- NoEntry: the path does not exist (or is inaccessible).
+data LinkStatus = IsLink | NotLink | NoEntry
+
+-- Check if a path is a symbolic link (with existence info).
+-- Note: file-symbolic-link? returns #f on both "not a symlink" AND
+-- lstat errors. We use pathExists to disambiguate non-existence.
 covering
-isSymlink : String -> IO Bool
-isSymlink path = do
-  -- Use system command to check; Idris2 stdlib lacks direct symlink check.
-  0 <- system ("test -L " ++ show path)
-    | _ => pure False
-  pure True
+checkSymlink : String -> IO LinkStatus
+checkSymlink path = do
+  r <- primIO (prim__isSymlink path)
+  if r == 1
+    then pure IsLink
+    else do
+      exists <- pathExists path
+      pure (if exists then NotLink else NoEntry)
 
 -- Read a symlink target.
 covering
 readLink : String -> IO (Maybe String)
 readLink path = do
-  -- Use system to capture readlink output via temp file.
-  0 <- system ("readlink " ++ show path ++ " > /tmp/pack-init-readlink.tmp 2>/dev/null")
-    | _ => pure Nothing
-  target <- readFileOr "/tmp/pack-init-readlink.tmp" ""
-  if target == ""
-    then pure Nothing
-    else pure (Just target)
+  target <- primIO (prim__readlink path)
+  pure (if target == "" then Nothing else Just target)
 
--- Create a symlink.
+-- Create a symlink (force: remove existing target first).
+-- Returns True on success, False on failure.
 covering
-createSymlink : String -> String -> IO ()
+createSymlink : String -> String -> IO Bool
 createSymlink target linkPath = do
-  _ <- system ("ln -sf " ++ show target ++ " " ++ show linkPath)
-  pure ()
+  _ <- removeFile linkPath  -- remove existing (ignore errors)
+  r <- primIO (prim__symlink target linkPath)
+  pure (r == 0)
 
--- Create directories recursively.
+-- Create directories recursively (like mkdir -p), helper.
+covering
+mkdirPGo : Bool -> String -> List String -> IO ()
+mkdirPGo isRoot pfx dirs =
+  case dirs of
+    [] => pure ()
+    (d :: ds) => do
+      let dir = if pfx == "" || pfx == "."
+                  then d
+                  else pfx ++ "/" ++ d
+      let fullDir = if isRoot && pfx == ""
+                      then "/" ++ d
+                      else dir
+      Right _ <- createDir fullDir
+        | Left FileExists => pure ()
+        | Left err => die ("pack-init: mkdir failed for " ++ fullDir ++ ": " ++ show err)
+      mkdirPGo isRoot fullDir ds
+
+-- Create directories recursively (like mkdir -p).
 covering
 mkdirP : String -> IO ()
-mkdirP path = do
-  _ <- system ("mkdir -p " ++ show path)
-  pure ()
+mkdirP path =
+  let components = filter (/= "") (forget (split (== '/') path))
+      isRooted = isPrefixOf "/" path
+  in mkdirPGo isRooted (if isRooted then "" else ".") components
 
--- Remove a file.
+-- Remove a file (ignore errors).
 covering
-removeFile : String -> IO ()
-removeFile path = do
-  _ <- system ("rm -f " ++ show path)
+removeFileForce : String -> IO ()
+removeFileForce path = do
+  _ <- removeFile path
   pure ()
 
--- Try to remove an empty directory.
+-- Try to remove an empty directory (ignore errors).
 covering
 tryRmdir : String -> IO ()
 tryRmdir path = do
-  _ <- system ("rmdir " ++ show path ++ " 2>/dev/null")
+  _ <- removeDir path
   pure ()
 
--- Remove a directory tree.
+-- Remove a directory tree recursively.
 covering
 rmTree : String -> IO ()
 rmTree path = do
-  _ <- system ("rm -rf " ++ show path)
+  Right entries <- listDir path
+    | Left _ => do _ <- removeFile path; pure ()  -- not a dir, try as file
+  traverse_ (\e => rmTree (path ++ "/" ++ e)) entries
+  _ <- removeDir path
   pure ()
+
+-- ===========================================================================
+-- Application logic
+-- ===========================================================================
 
 -- Get pack state directory, respecting overrides.
 covering
@@ -182,23 +240,28 @@ createSymlinks installDir commits = do
   traverse_ (\(commit, libexec) => do
     let target = installDir ++ "/" ++ commit ++ "/idris2"
     let toolchain = libexec ++ "/idris2-toolchain"
-    isSym <- isSymlink target
-    if isSym
-      then do
+    status <- checkSymlink target
+    case status of
+      IsLink => do
         mTarget <- readLink target
         case mTarget of
           Just currentTarget =>
             if currentTarget /= toolchain
-              then do removeFile target
-                      createSymlink toolchain target
+              then do removeFileForce target
+                      ok <- createSymlink toolchain target
+                      when (not ok) $
+                        die ("pack-init: symlink failed: "
+                             ++ toolchain ++ " -> " ++ target)
               else pure ()
-          Nothing => pure ()
-      else do
-        exists <- pathExists target
-        if exists
-          then pure ()  -- real directory (pack-managed), leave it
-          else do mkdirP (installDir ++ "/" ++ commit)
-                  createSymlink toolchain target
+          Nothing =>
+            die ("pack-init: readlink failed on symlink: " ++ target)
+      NotLink => pure ()  -- real directory (pack-managed), leave it
+      NoEntry => do
+        mkdirP (installDir ++ "/" ++ commit)
+        ok <- createSymlink toolchain target
+        when (not ok) $
+          die ("pack-init: symlink failed: "
+               ++ toolchain ++ " -> " ++ target)
     ) commits
 
 -- Clean up stale symlinks from previously-installed formulas.
@@ -211,18 +274,22 @@ cleanupStaleSymlinks installDir seenCommits = do
   traverse_ (\commitDir => do
     let fullPath = installDir ++ "/" ++ commitDir
     let idris2Link = fullPath ++ "/idris2"
-    isSym <- isSymlink idris2Link
-    if isSym && not (elem commitDir knownCommits)
-      then do
-        mTarget <- readLink idris2Link
-        case mTarget of
-          Just linkTarget =>
-            if isInfixOf "idris2-pack" linkTarget && isInfixOf "idris2-toolchain" linkTarget
-              then do removeFile idris2Link
-                      tryRmdir fullPath
-              else pure ()
-          Nothing => pure ()
-      else pure ()
+    status <- checkSymlink idris2Link
+    case status of
+      IsLink =>
+        if not (elem commitDir knownCommits)
+          then do
+            mTarget <- readLink idris2Link
+            case mTarget of
+              Just linkTarget =>
+                if isInfixOf "idris2-pack" linkTarget && isInfixOf "idris2-toolchain" linkTarget
+                  then do removeFileForce idris2Link
+                          tryRmdir fullPath
+                  else pure ()
+              Nothing =>
+                putStrLn ("pack-init: warning: cannot read symlink: " ++ idris2Link)
+          else pure ()
+      _ => pure ()
     ) entries
 
 covering
@@ -274,14 +341,16 @@ main = do
 
   if collectionChanged
     then do
-      _ <- writeFile (packState ++ "/pack.toml")
-                     ("collection = \"" ++ primaryCollection ++ "\"\n")
+      Right _ <- writeFile (packState ++ "/pack.toml")
+                           ("collection = \"" ++ primaryCollection ++ "\"\n")
+        | Left err => die ("pack-init: failed to write pack.toml: " ++ show err)
       rmTree (packState ++ "/db")
       pure ()
     else pure ()
 
   -- Write new stamp
-  _ <- writeFile stampFile newStamp
+  Right _ <- writeFile stampFile newStamp
+    | Left err => die ("pack-init: failed to write stamp: " ++ show err)
   pure ()
 
   if collectionChanged

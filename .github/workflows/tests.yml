@@ -34,8 +34,9 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Cache Homebrew Bundler RubyGems
-        uses: actions/cache@v5
+      - name: Restore Homebrew Bundler RubyGems cache
+        id: gems-cache
+        uses: actions/cache/restore@v5
         with:
           path: ${{ steps.set-up-homebrew.outputs.gems-path }}
           key: ${{ matrix.os }}-${{ runner.arch }}-rubygems-${{ steps.set-up-homebrew.outputs.gems-hash }}
@@ -79,3 +80,10 @@ jobs:
           name: bottles_${{ matrix.os }}
           path: '*.bottle.*'
           if-no-files-found: error
+
+      - name: Save Homebrew Bundler RubyGems cache
+        if: always() && steps.gems-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v5
+        with:
+          path: ${{ steps.set-up-homebrew.outputs.gems-path }}
+          key: ${{ steps.gems-cache.outputs.cache-primary-key }}

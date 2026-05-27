@@ -72,7 +72,7 @@ stripTopDir = \path -> do
   let (_topDir, afterSlash) = Text.breakOn "/" path
   if Eq.eq afterSlash ""
     then IO.pure path
-    else IO.pure (Text.drop 1 afterSlash)
+    else IO.pure (Text.drop (Text.length "/") afterSlash)
 
 -- Process a single library: download, hash, find ipkg install steps.
 -- Returns a tuple encoded as a 4-element list: [name, url, sha256, installSteps]
