@@ -39,9 +39,17 @@ prim__isSymlink : String -> PrimIO Int
 prim__symlink : String -> String -> PrimIO Int
 
 ||| Read a symbolic link target: readlink(path, buf, 4096).
-||| Returns the target string, or "" on error.
-%foreign "scheme,chez:(lambda (path) (let* ([bv (make-bytevector 4096)] [n ((foreign-procedure \"readlink\" (string u8* int) int) path bv 4096)]) (if (< n 0) \"\" (utf8->string (bytevector-copy bv 0 n)))))"
-prim__readlink : String -> PrimIO String
+||| Returns the target string as AnyPtr, or #f on error.
+%foreign "scheme,chez:(lambda (path) (let* ([bv (make-bytevector 4096)] [n ((foreign-procedure \"readlink\" (string u8* int) int) path bv 4096)]) (if (< n 0) #f (utf8->string (bytevector-copy bv 0 n)))))"
+prim__readlink : String -> PrimIO AnyPtr
+
+||| Check if an AnyPtr is null (#f in Chez).
+%foreign "scheme,chez:(lambda (x) (if (eq? x #f) 1 0))"
+prim__isNull : AnyPtr -> PrimIO Int
+
+||| Cast a non-null AnyPtr to String (caller must ensure non-null).
+%foreign "scheme,chez:(lambda (x) x)"
+prim__anyPtrToString : AnyPtr -> PrimIO String
 
 -- ===========================================================================
 -- File I/O wrappers (stdlib + FFI)
@@ -91,8 +99,13 @@ checkSymlink path = do
 covering
 readLink : String -> IO (Maybe String)
 readLink path = do
-  target <- primIO (prim__readlink path)
-  pure (if target == "" then Nothing else Just target)
+  ptr <- primIO (prim__readlink path)
+  isNull <- primIO (prim__isNull ptr)
+  if isNull == 1
+    then pure Nothing
+    else do
+      target <- primIO (prim__anyPtrToString ptr)
+      pure (Just target)
 
 -- Create a symlink (force: remove existing target first).
 -- Returns True on success, False on failure.
