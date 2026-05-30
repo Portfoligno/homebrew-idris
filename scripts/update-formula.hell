@@ -47,6 +47,15 @@ jqQuery = \query -> \file -> do
     (Process.proc "jq" ["-r", query, file])
   IO.pure (Text.strip out)
 
+-- Query .db[<key>].commit for a library key that may contain hyphens or
+-- other special characters. The key is passed as a typed jq --arg, never
+-- concatenated into the filter, so the filter stays static and jq's
+-- bracket-indexing ([$key]) handles special characters correctly.
+jqLibCommit = \key -> \file -> do
+  out <- Main.readChecked (Text.concat ["jq .db[", key, "].commit"])
+    (Process.proc "jq" ["-r", "--arg", "key", key, ".db[$key].commit", file])
+  IO.pure (Text.strip out)
+
 -- Build a GitHub archive URL.
 archiveUrl = \owner -> \repo -> \commit ->
   Text.concat ["https://github.com/", owner, "/", repo, "/archive/", commit, ".tar.gz"]
@@ -78,8 +87,7 @@ stripTopDir = \path -> do
 -- Returns a tuple encoded as a 4-element list: [name, url, sha256, installSteps]
 -- where installSteps is semicolon-separated.
 processLibrary = \tomlKey -> \owner -> \repo -> \jsonFile -> do
-  let jqPath = Text.concat [".db.", tomlKey, ".commit"]
-  commit <- Main.jqQuery jqPath jsonFile
+  commit <- Main.jqLibCommit tomlKey jsonFile
 
   if Eq.eq commit "null"
     then Exit.die (Text.concat ["Required library '", tomlKey, "' not found in collection"])
