@@ -154,7 +154,7 @@ main = do
 
   -- Step 2: Convert TOML to JSON via yq
   jsonRaw <- Main.readChecked "yq toml-to-json"
-    (Process.proc "yq" ["-p", "toml", "-o", "json", "/tmp/collection.toml"])
+    (Process.proc "yq" ["-p", "toml", "-o", "json", ".", "/tmp/collection.toml"])
   Text.writeFile "/tmp/collection.json" jsonRaw
   Text.putStrLn "Converted TOML to JSON"
 

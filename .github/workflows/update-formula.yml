@@ -41,7 +41,7 @@ jobs:
         uses: ./.github/actions/setup-hell
 
       - name: Install yq
-        run: sudo snap install yq
+        run: ./scripts/install-yq.hell
 
       - name: Update formula
         run: ./scripts/update-formula.hell "$COLLECTION_FILE" "$VERSION"

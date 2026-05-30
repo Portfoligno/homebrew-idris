@@ -1,0 +1,45 @@
+#!/usr/bin/env hell
+
+-- Install mikefarah/yq (Go) into ~/.local/bin so it precedes any
+-- pre-existing kislyuk/yq (Python) on the GitHub Actions runner PATH.
+-- Usage: ./scripts/install-yq.hell
+--
+-- The Ubuntu runner ships kislyuk/yq at /usr/bin/yq, which is a jq
+-- wrapper with no TOML input mode. update-formula.hell needs
+-- mikefarah/yq's `-p toml` support, so we download the Go binary to
+-- ~/.local/bin/yq (already added to PATH ahead of /usr/bin by the
+-- setup-hell action) and make it executable.
+
+-- Run a process and die on failure (no stdout capture).
+runChecked = \label -> \proc -> do
+  result <- Process.runProcess proc
+  Exit.exitCode
+    (IO.pure ())
+    (\code -> Exit.die (Text.concat [label, " failed with exit code ", Show.show code]))
+    result
+
+main = do
+  -- Resolve the install directory under HOME.
+  homeRaw <- do
+    (exitCode, stdout, stderr) <- Text.readProcess
+      (Process.proc "printenv" ["HOME"])
+    Exit.exitCode
+      (IO.pure stdout)
+      (\code -> Exit.die (Text.concat ["printenv HOME failed with exit code ", Show.show code, ": ", stderr]))
+      exitCode
+  let home = Text.strip homeRaw
+  let dest = Text.concat [home, "/.local/bin/yq"]
+
+  -- Download the mikefarah/yq Linux amd64 binary.
+  Main.runChecked "curl yq"
+    (Process.proc "curl"
+      [ "-fsSL"
+      , "https://github.com/mikefarah/yq/releases/download/v4.44.3/yq_linux_amd64"
+      , "-o", dest
+      ])
+
+  -- Make it executable.
+  Main.runChecked "chmod yq"
+    (Process.proc "chmod" ["+x", dest])
+
+  Text.putStrLn (Text.concat ["Installed mikefarah/yq to ", dest])
