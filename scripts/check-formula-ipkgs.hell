@@ -1,0 +1,87 @@
+#!/usr/bin/env hell
+
+-- Regression guard: verify every ipkg the generated formula installs is a
+-- path that the pack-db collection actually declares.
+-- Usage: ./scripts/check-formula-ipkgs.hell
+--
+-- This is an ALLOWLIST check, not a denylist. The allowed set is every
+-- `.db[].ipkg` value in /tmp/collection.json (the converted collection that
+-- update-formula.hell just wrote). The used set is every `--install "..."`
+-- path extracted from Formula/idris2-pack.rb. Any used path that is not a
+-- member of the allowed set is an offender and the script dies listing them.
+--
+-- The point: docs/profile/debug ipkgs (and any other non-library ipkg that a
+-- future glob regression might reintroduce) are never named in a pack-db
+-- `ipkg` field, so they can never be members of the allowed set. There is no
+-- hardcoded list of "bad" directories -- membership in the pack-declared set
+-- is the only thing that admits a path.
+--
+-- No regex: paths are extracted with Text.splitOn / Text.breakOn only.
+
+-- Run a process, capture stdout, die on failure.
+readChecked = \label -> \proc -> do
+  (exitCode, stdout, stderr) <- Text.readProcess proc
+  Exit.exitCode
+    (IO.pure stdout)
+    (\code -> Exit.die (Text.concat [label, " failed with exit code ", Show.show code, ": ", stderr]))
+    exitCode
+
+-- Extract the quoted ipkg path from a single `--install` line of the formula.
+-- A line looks like:   system idris2_bin, "--install", "core/ilex-core.ipkg"
+-- We break after the `"--install"` marker, then take the text inside the
+-- first pair of double quotes that follows. The line is already known to
+-- contain the marker (the caller filtered on it), so a missing path is a
+-- malformed formula and we die loudly rather than skip it.
+extractInstallPath = \line -> do
+  -- Drop everything up to and including the install marker; the path argument
+  -- follows as the next double-quoted token.
+  let (_before, afterMarker) = Text.breakOn "\"--install\"" line
+  let afterArgs = Text.drop (Text.length "\"--install\"") afterMarker
+  -- Skip to the opening quote of the path argument, then strip it.
+  let (_gap, atOpenQuote) = Text.breakOn "\"" afterArgs
+  let pathAndRest = Text.drop (Text.length "\"") atOpenQuote
+  let (path, _closing) = Text.breakOn "\"" pathAndRest
+  if Eq.eq path ""
+    then Exit.die (Text.concat ["Malformed --install line in formula: ", line])
+    else IO.pure path
+
+main = do
+  -- Allowed set: every declared ipkg path in the collection.
+  allowedRaw <- Main.readChecked "jq .db[].ipkg"
+    (Process.proc "jq" ["-r", ".db[].ipkg", "/tmp/collection.json"])
+  let allowedLines = Text.splitOn "\n" (Text.strip allowedRaw)
+  let allowed = List.filter (\p -> Bool.not (Eq.eq p "")) allowedLines
+
+  if Eq.eq (List.length allowed) 0
+    then Exit.die "No ipkg paths found in /tmp/collection.json (.db[].ipkg empty)"
+    else IO.pure ()
+
+  -- Used set: every --install path in the generated formula.
+  formulaText <- Text.readFile "Formula/idris2-pack.rb"
+  let formulaLines = Text.splitOn "\n" formulaText
+  let installLines = List.filter (\l -> Text.isInfixOf "\"--install\"" l) formulaLines
+  used <- Monad.mapM (\l -> Main.extractInstallPath l) installLines
+
+  if Eq.eq (List.length used) 0
+    then Exit.die "No --install lines found in Formula/idris2-pack.rb"
+    else IO.pure ()
+
+  -- Any used path not in the allowed set is an offender.
+  let offenders = List.filter
+        (\p -> Bool.not (List.elem p allowed))
+        used
+
+  if Eq.eq (List.length offenders) 0
+    then Text.putStrLn (Text.concat
+      [ "OK: all ", Show.show (List.length used)
+      , " --install paths are declared in the collection." ])
+    else do
+      let detail = List.map (\p -> Text.concat ["    ", p]) offenders
+      Exit.die (Text.concat
+        [ "Formula installs ", Show.show (List.length offenders)
+        , " ipkg path(s) not declared in the collection (.db[].ipkg):\n"
+        , Text.intercalate "\n" detail
+        , "\nEvery installed ipkg must be a pack-db-declared library ipkg. "
+        , "These paths are not -- they are likely auxiliary (docs/profile/debug) "
+        , "or stale entries. Fix the generator or the resources list."
+        ])

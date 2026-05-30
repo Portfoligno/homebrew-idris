@@ -56,65 +56,116 @@ jqLibCommit = \key -> \file -> do
     (Process.proc "jq" ["-r", "--arg", "key", key, ".db[$key].commit", file])
   IO.pure (Text.strip out)
 
+-- Query .db[<key>].ipkg for the exact repo-relative ipkg path. The key is
+-- passed as a typed jq --arg so the filter stays static and bracket-indexing
+-- handles hyphens/special characters correctly. This is the canonical,
+-- pack-declared ipkg to install -- never a glob over the tarball -- so
+-- auxiliary docs/profile/debug ipkgs can never be selected.
+jqLibIpkg = \key -> \file -> do
+  out <- Main.readChecked (Text.concat ["jq .db[", key, "].ipkg"])
+    (Process.proc "jq" ["-r", "--arg", "key", key, ".db[$key].ipkg", file])
+  IO.pure (Text.strip out)
+
 -- Build a GitHub archive URL.
 archiveUrl = \owner -> \repo -> \commit ->
   Text.concat ["https://github.com/", owner, "/", repo, "/archive/", commit, ".tar.gz"]
 
--- List .ipkg files in a tarball, filtering out tests/docs/examples.
--- Returns newline-separated relative paths (stripped of top-level dir).
-listIpkgFiles = \tarball -> do
-  tarOutput <- Main.readChecked "tar -tf"
-    (Process.proc "tar" ["-tf", tarball])
-  let allFiles = Text.splitOn "\n" (Text.strip tarOutput)
-  let ipkgFiles = List.filter (\f -> Text.isSuffixOf ".ipkg" f) allFiles
-  -- Filter out test/docs/examples ipkg files (sequential filters)
-  let noTest = List.filter (\f -> Bool.not (Text.isInfixOf "-test" f)) ipkgFiles
-  let noTests = List.filter (\f -> Bool.not (Text.isInfixOf "-tests" f)) noTest
-  let noDocs = List.filter (\f -> Bool.not (Text.isInfixOf "-docs" f)) noTests
-  let noExamples = List.filter (\f -> Bool.not (Text.isInfixOf "-examples" f)) noDocs
-  let noTestDir = List.filter (\f -> Bool.not (Text.isInfixOf "test/" f)) noExamples
-  let libraryIpkgs = List.filter (\f -> Bool.not (Text.isInfixOf "tests/" f)) noTestDir
-  IO.pure libraryIpkgs
+-- Assert that every key declared for one resource resolves to the same commit
+-- in the collection, returning that shared commit. A resource is exactly one
+-- repo @ one commit (one tarball download), so co-located keys must agree.
+-- Published collections are post-resolution snapshots where one repo entry
+-- yields one commit and several keys differ only in their ipkg path, so this
+-- always holds for real data; the assertion is a defensive early-fail guard
+-- catching a malformed collection or a key grouped under the wrong resource.
+-- A missing key reads as "null", which differs from any resolved commit, so
+-- the missing-key case is caught here too (only the primary needs a null check).
+assertSameCommit = \resourceName -> \keys -> \jsonFile -> do
+  primaryKey <- Maybe.maybe
+    (Exit.die (Text.concat ["Resource '", resourceName, "' declares no keys"]))
+    IO.pure
+    (Maybe.listToMaybe keys)
 
--- Extract relative path from a tarball member (strip top-level directory).
-stripTopDir = \path -> do
-  let (_topDir, afterSlash) = Text.breakOn "/" path
-  if Eq.eq afterSlash ""
-    then IO.pure path
-    else IO.pure (Text.drop (Text.length "/") afterSlash)
-
--- Process a single library: download, hash, find ipkg install steps.
--- Returns a tuple encoded as a 4-element list: [name, url, sha256, installSteps]
--- where installSteps is semicolon-separated.
-processLibrary = \tomlKey -> \owner -> \repo -> \jsonFile -> do
-  commit <- Main.jqLibCommit tomlKey jsonFile
-
-  if Eq.eq commit "null"
-    then Exit.die (Text.concat ["Required library '", tomlKey, "' not found in collection"])
+  primaryCommit <- Main.jqLibCommit primaryKey jsonFile
+  if Eq.eq primaryCommit "null"
+    then Exit.die (Text.concat
+      ["Resource '", resourceName, "': primary key '", primaryKey, "' not found in collection"])
     else IO.pure ()
 
-  let url = Main.archiveUrl owner repo commit
-  let tarFile = Text.concat ["/tmp/lib-", tomlKey, ".tar.gz"]
+  -- Resolve every key into a typed (key, commit) pair.
+  pairs <- Monad.mapM
+    (\k -> do
+       c <- Main.jqLibCommit k jsonFile
+       IO.pure (k, c))
+    keys
 
+  -- A key is bad if its commit differs from the primary's.
+  let mismatches = List.filter
+        (\pair -> do
+           let (_k, c) = pair
+           Bool.not (Eq.eq c primaryCommit))
+        pairs
+
+  if Eq.eq (List.length mismatches) 0
+    then IO.pure primaryCommit
+    else do
+      let detail = List.map
+            (\pair -> do
+               let (k, c) = pair
+               Text.concat ["    ", k, " -> ", c])
+            mismatches
+      Exit.die (Text.concat
+        [ "Resource '", resourceName, "': keys do not all resolve to commit ", primaryCommit, ":\n"
+        , Text.intercalate "\n" detail
+        , "\nEvery key in one resource must share a commit (they share a single "
+        , "tarball download). The collection is malformed or these keys were "
+        , "grouped into the wrong resource."
+        ])
+
+-- Assert that an ipkg path read from the collection is well-formed: it must
+-- end with ".ipkg", must not be absolute, and must not contain "..". This is
+-- a cheap point-of-use contract check; given the structural fix the value
+-- already came from pack-db, but a corrupt/empty field still dies loudly here.
+assertIpkgPath = \key -> \ipkg -> do
+  let okSuffix = Text.isSuffixOf ".ipkg" ipkg
+  let notAbsolute = Bool.not (Text.isPrefixOf "/" ipkg)
+  let noDotDot = Bool.not (Text.isInfixOf ".." ipkg)
+  -- Hell here has no Bool.and; fold the three checks with nested ifs.
+  if okSuffix
+    then if notAbsolute
+      then if noDotDot
+        then IO.pure ()
+        else Exit.die (Text.concat ["Malformed ipkg path for '", key, "': ", ipkg])
+      else Exit.die (Text.concat ["Malformed ipkg path for '", key, "': ", ipkg])
+    else Exit.die (Text.concat ["Malformed ipkg path for '", key, "': ", ipkg])
+
+-- Process one resource (a repo @ commit) that may supply several pack-db
+-- entries. `keys` is the ordered list of db keys whose ipkgs to install from
+-- this single tarball; their exact paths come from the collection's ipkg
+-- field, never from globbing. All keys must resolve to the same commit (one
+-- tarball) -- assertSameCommit fails early otherwise.
+processResource = \resourceName -> \owner -> \repo -> \keys -> \jsonFile -> do
+  commit <- Main.assertSameCommit resourceName keys jsonFile
+
+  let url = Main.archiveUrl owner repo commit
+  let tarFile = Text.concat ["/tmp/lib-", resourceName, ".tar.gz"]
   Main.downloadFile url tarFile
   sha <- Main.computeSha256 tarFile
 
-  -- List ipkg files
-  ipkgPaths <- Main.listIpkgFiles tarFile
+  -- Exact ipkg path per key, in the given order (no glob, no stripTopDir).
+  -- Each path is validated for well-formedness before use.
+  ipkgPaths <- Monad.mapM (\k -> do
+    p <- Main.jqLibIpkg k jsonFile
+    if Eq.eq p "null"
+      then Exit.die (Text.concat ["Library '", k, "' has no ipkg field in collection"])
+      else IO.pure ()
+    Main.assertIpkgPath k p
+    IO.pure p
+    ) keys
 
-  -- Strip top-level dir from paths
-  relPaths <- Monad.mapM (\p -> Main.stripTopDir p) ipkgPaths
-
-  -- Filter empty strings
-  let cleanPaths = List.filter (\p -> Bool.not (Eq.eq p "")) relPaths
-
-  -- For single-ipkg repos, the install step is just the file.
-  -- For multi-ipkg repos, we use the order as listed in tar (which is
-  -- filesystem order -- adequate for the small set of libs we handle).
-  let installSteps = Text.intercalate ";" cleanPaths
-
-  Text.putStrLn (Text.concat ["  ", repo, ": ", commit, " (", Show.show (List.length cleanPaths), " ipkg files)"])
-  IO.pure (repo, url, sha, installSteps)
+  let installSteps = Text.intercalate ";" ipkgPaths
+  Text.putStrLn (Text.concat
+    ["  ", resourceName, ": ", commit, " (", Show.show (List.length ipkgPaths), " ipkg)"])
+  IO.pure (resourceName, url, sha, installSteps)
 
 -- Build a resource block for the formula.
 buildResourceBlock = \name -> \url -> \sha -> do
@@ -186,54 +237,45 @@ main = do
   idris2Sha <- Main.computeSha256 "/tmp/idris2.tar.gz"
   Text.putStrLn (Text.concat ["idris2: ", idris2Commit])
 
-  -- Step 5: Resolve libraries (in dependency order)
+  -- Step 5: Resolve libraries (in dependency order). Each resource is a repo
+  -- @ one commit (one tarball); its key list is the ordered set of pack-db
+  -- entries to install from that tarball, using exact ipkg paths. This list
+  -- is pack's real dependency-ordered closure (11 packages across 9 repos),
+  -- verified against the live collection: pack -> {elab-util, filepath,
+  -- getopts, ilex-toml}, transitively pulling algebra, ref1, array,
+  -- bytestring, refined, ilex-core, ilex. `literal` is NOT in pack's closure
+  -- and is intentionally excluded. The idris2-ilex repo supplies three keys
+  -- (ilex-core -> ilex -> ilex-toml) in dependency order.
   Text.putStrLn "Resolving libraries..."
-  lib01 <- Main.processLibrary "algebra" "stefan-hoeck" "idris2-algebra" "/tmp/collection.json"
-  lib02 <- Main.processLibrary "ref1" "stefan-hoeck" "idris2-ref1" "/tmp/collection.json"
-  lib03 <- Main.processLibrary "array" "stefan-hoeck" "idris2-array" "/tmp/collection.json"
-  lib04 <- Main.processLibrary "bytestring" "stefan-hoeck" "idris2-bytestring" "/tmp/collection.json"
-  lib05 <- Main.processLibrary "getopts" "idris-community" "idris2-getopts" "/tmp/collection.json"
-  lib06 <- Main.processLibrary "elab-util" "stefan-hoeck" "idris2-elab-util" "/tmp/collection.json"
-  lib07 <- Main.processLibrary "refined" "stefan-hoeck" "idris2-refined" "/tmp/collection.json"
-  lib08 <- Main.processLibrary "literal" "stefan-hoeck" "idris2-literal" "/tmp/collection.json"
-  lib09 <- Main.processLibrary "ilex" "stefan-hoeck" "idris2-ilex" "/tmp/collection.json"
-  lib10 <- Main.processLibrary "filepath" "stefan-hoeck" "idris2-filepath" "/tmp/collection.json"
+  let resources =
+        [ ("idris2-algebra",    "stefan-hoeck",    "idris2-algebra",    ["algebra"])
+        , ("idris2-ref1",       "stefan-hoeck",    "idris2-ref1",       ["ref1"])
+        , ("idris2-array",      "stefan-hoeck",    "idris2-array",      ["array"])
+        , ("idris2-bytestring", "stefan-hoeck",    "idris2-bytestring", ["bytestring"])
+        , ("idris2-elab-util",  "stefan-hoeck",    "idris2-elab-util",  ["elab-util"])
+        , ("idris2-getopts",    "idris-community", "idris2-getopts",    ["getopts"])
+        , ("idris2-filepath",   "stefan-hoeck",    "idris2-filepath",   ["filepath"])
+        , ("idris2-refined",    "stefan-hoeck",    "idris2-refined",    ["refined"])
+        , ("idris2-ilex",       "stefan-hoeck",    "idris2-ilex",       ["ilex-core", "ilex", "ilex-toml"])
+        ]
 
-  -- Step 6: Build resource blocks
-  let (name01, url01, sha01, steps01) = lib01
-  let (name02, url02, sha02, steps02) = lib02
-  let (name03, url03, sha03, steps03) = lib03
-  let (name04, url04, sha04, steps04) = lib04
-  let (name05, url05, sha05, steps05) = lib05
-  let (name06, url06, sha06, steps06) = lib06
-  let (name07, url07, sha07, steps07) = lib07
-  let (name08, url08, sha08, steps08) = lib08
-  let (name09, url09, sha09, steps09) = lib09
-  let (name10, url10, sha10, steps10) = lib10
+  processed <- Monad.mapM (\spec -> do
+    let (rn, owner, repo, keys) = spec
+    Main.processResource rn owner repo keys "/tmp/collection.json"
+    ) resources
 
-  rb01 <- Main.buildResourceBlock name01 url01 sha01
-  rb02 <- Main.buildResourceBlock name02 url02 sha02
-  rb03 <- Main.buildResourceBlock name03 url03 sha03
-  rb04 <- Main.buildResourceBlock name04 url04 sha04
-  rb05 <- Main.buildResourceBlock name05 url05 sha05
-  rb06 <- Main.buildResourceBlock name06 url06 sha06
-  rb07 <- Main.buildResourceBlock name07 url07 sha07
-  rb08 <- Main.buildResourceBlock name08 url08 sha08
-  rb09 <- Main.buildResourceBlock name09 url09 sha09
-  rb10 <- Main.buildResourceBlock name10 url10 sha10
-  let resourceBlocks = Text.intercalate "\n\n" [rb01, rb02, rb03, rb04, rb05, rb06, rb07, rb08, rb09, rb10]
+  -- Step 6: Build resource and install blocks from the processed results.
+  rbs <- Monad.mapM (\p -> do
+    let (n, u, s, _steps) = p
+    Main.buildResourceBlock n u s
+    ) processed
+  let resourceBlocks = Text.intercalate "\n\n" rbs
 
-  ib01 <- Main.buildInstallBlock name01 steps01
-  ib02 <- Main.buildInstallBlock name02 steps02
-  ib03 <- Main.buildInstallBlock name03 steps03
-  ib04 <- Main.buildInstallBlock name04 steps04
-  ib05 <- Main.buildInstallBlock name05 steps05
-  ib06 <- Main.buildInstallBlock name06 steps06
-  ib07 <- Main.buildInstallBlock name07 steps07
-  ib08 <- Main.buildInstallBlock name08 steps08
-  ib09 <- Main.buildInstallBlock name09 steps09
-  ib10 <- Main.buildInstallBlock name10 steps10
-  let installBlocks = Text.intercalate "\n\n" [ib01, ib02, ib03, ib04, ib05, ib06, ib07, ib08, ib09, ib10]
+  ibs <- Monad.mapM (\p -> do
+    let (n, _u, _s, steps) = p
+    Main.buildInstallBlock n steps
+    ) processed
+  let installBlocks = Text.intercalate "\n\n" ibs
 
   -- Derive collection name from filename (strip .toml extension)
   let (collectionName, _ext) = Text.breakOn ".toml" collectionFile

@@ -50,6 +50,12 @@ jobs:
           COLLECTION_FILE: ${{ inputs.collection_file }}
           VERSION: ${{ inputs.version }}
 
+      # Allowlist guard: every --install path in the generated formula must be
+      # a pack-db-declared .db[].ipkg path. Catches any reintroduced glob that
+      # would pull in docs/profile/debug ipkgs, before the PR is pushed.
+      - name: Check formula ipkgs
+        run: ./scripts/check-formula-ipkgs.hell
+
       - name: Set up git
         uses: Homebrew/actions/git-user-config@main
 
