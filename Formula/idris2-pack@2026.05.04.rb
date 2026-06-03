@@ -160,7 +160,20 @@ class Idris2PackAT20260504 < Formula
     # Step 4: Install into libexec
     libexec.install "build/exec/pack"
     libexec.install "build/exec/pack_app"
-    cp tap.path/"scripts/pack-init.idr", libexec/"pack-init.idr"
+    # Precompile pack-init to a standalone Chez-backed executable. Invoking it
+    # via `idris2 --exec main pack-init.idr` fails whenever pack runs from a
+    # directory that is not an ancestor of the script: Idris derives the module
+    # namespace by stripping the working directory from the absolute source
+    # path (Core.Directory.mbPathToNS) and rejects a file not under CWD. A
+    # compiled executable has no such constraint and needs no per-run recompile.
+    # Copying to buildpath keeps the source path relative, so the namespace
+    # check passes; $CHEZ (set above to the chezscheme opt path) is baked into
+    # the launcher shebang and stays valid after relocation via the
+    # `depends_on "chezscheme"` runtime dependency.
+    cp tap.path/"scripts/pack-init.idr", buildpath/"pack-init.idr"
+    system idris2_bin, "-o", "pack-init", "pack-init.idr"
+    libexec.install "build/exec/pack-init"
+    libexec.install "build/exec/pack-init_app"
     (libexec/"idris2-toolchain").install Dir[idris2_prefix/"*"]
     (libexec/"COLLECTION").write "collection\n"
     (libexec/"IDRIS2_COMMIT").write "214eb45472e15187e6f932c6820a0f0d5542a18e\n"
@@ -206,7 +219,7 @@ class Idris2PackAT20260504 < Formula
         STAMP="$(cat "${PACK_STATE}/.brew-stamp" 2>/dev/null)" || true
         case "${STAMP}" in
           "${BREW_COLLECTION}:"*) ;;
-          *) PACK_INIT_LIBEXEC="${LIBEXEC}" "${LIBEXEC}/idris2-toolchain/bin/idris2" --exec main "${LIBEXEC}/pack-init.idr" 2>&1 || true ;;
+          *) PACK_INIT_LIBEXEC="${LIBEXEC}" "${LIBEXEC}/pack-init" 2>&1 || true ;;
         esac
       fi
 
