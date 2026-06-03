@@ -1,0 +1,98 @@
+#!/usr/bin/env hell
+
+-- State-derived completion gate for the one-shot bottle migration.
+-- Usage: ./scripts/migrate-gate.hell <github-output-path>
+--
+-- Emits `should_run=true` or `should_run=false` to the file named by the single
+-- argument (the workflow passes $GITHUB_OUTPUT). The `migrate` job gates on this
+-- via `if: needs.gate.outputs.should_run == 'true'`.
+--
+-- The predicate is derived ENTIRELY from live state, never from a flag that
+-- could lie. The migration is complete (should_run=false) iff BOTH:
+--
+--   (A) no asset on ANY idris2-pack-* release still carries the double-dash
+--       infix "@<v>--<v>" -- i.e. Op A finished across every release AND Op B's
+--       double-dash cleanup finished; and
+--   (B) Formula/idris2-pack.rb contains a "rebuild 1" line -- i.e. Op B's single
+--       atomic two-file formula flip landed (it is the only thing that adds that
+--       line, so its presence proves the SHA flip happened).
+--
+-- Both clauses are cheap (one release-list sweep + one local file read), so a
+-- post-completion tick short-circuits in seconds with no bottle downloads. When
+-- the migration is incomplete the script ignores any marker and returns true so
+-- the migrate job re-derives and finishes the remaining work.
+--
+-- Requires GH_TOKEN in environment. Designed for ubuntu-latest.
+
+-- Run a process, capture stdout, die on failure.
+readChecked = \label -> \proc -> do
+  (exitCode, stdout, stderr) <- Text.readProcess proc
+  Exit.exitCode
+    (IO.pure stdout)
+    (\code -> Exit.die (Text.concat [label, " failed with exit code ", Show.show code, ": ", stderr]))
+    exitCode
+
+-- Non-empty lines of a captured stdout blob.
+lines = \raw ->
+  List.filter (\l -> Bool.not (Eq.eq l "")) (Text.splitOn "\n" (Text.strip raw))
+
+-- The double-dash versioned-asset infix for a given version, e.g. for
+-- "2026.05.29" this is "@2026.05.29--2026.05.29". Computed from the version,
+-- never a hardcoded count.
+doubleInfixOf = \version -> Text.concat ["@", version, "--", version]
+
+-- True iff any bottle asset on `tag` still carries the double-dash infix for the
+-- version derived from the tag. Read-only.
+releaseHasDoubleDash = \tag -> do
+  let prefix = "idris2-pack-"
+  if Bool.not (Text.isPrefixOf prefix tag)
+    then IO.pure Bool.False
+    else do
+      let version = Text.drop (Text.length prefix) tag
+      let doubleInfix = Main.doubleInfixOf version
+      assetsRaw <- Main.readChecked "gh release view"
+        (Process.proc "gh" ["release", "view", tag, "--json", "assets", "--jq", ".assets[].name"])
+      let assets = Main.lines assetsRaw
+      let doubles = List.filter (\a -> Text.isInfixOf doubleInfix a) assets
+      IO.pure (Bool.not (Eq.eq (List.length doubles) 0))
+
+-- True iff ANY release still has a double-dash asset (clause A is the negation).
+anyDoubleDashRemaining = do
+  tagsRaw <- Main.readChecked "gh release list"
+    (Process.proc "gh" ["release", "list", "--limit", "1000", "--json", "tagName", "--jq", ".[].tagName"])
+  let tags = Main.lines tagsRaw
+  flags <- Monad.mapM Main.releaseHasDoubleDash tags
+  IO.pure (List.any (\f -> f) flags)
+
+main = do
+  args <- Environment.getArgs
+  outPath <- Maybe.maybe
+    (Exit.die "missing arg: $GITHUB_OUTPUT path")
+    IO.pure
+    (Maybe.listToMaybe args)
+
+  -- Clause B: the atomic formula flip landed (rebuild 1 present in the
+  -- unversioned formula). Reading the file is free.
+  unvFormula <- Text.readFile "Formula/idris2-pack.rb"
+  let flipLanded = Text.isInfixOf "rebuild 1" unvFormula
+
+  -- Clause A: no double-dash asset remains on any release.
+  doubleRemaining <- Main.anyDoubleDashRemaining
+
+  -- Complete iff the flip landed AND no double-dash remains. `Bool.and` is not
+  -- in this Hell build's prelude, so express the conjunction with a nested if
+  -- (the same idiom the migration script uses for its gate logic).
+  let complete =
+        if flipLanded
+          then Bool.not doubleRemaining
+          else Bool.False
+  let shouldRun = Bool.not complete
+
+  if shouldRun
+    then Text.putStrLn "gate: migration INCOMPLETE -> should_run=true"
+    else Text.putStrLn "gate: migration COMPLETE -> should_run=false (no-op)"
+
+  -- Emit the job output. A redirect is forbidden in a YAML `run:` step, so the
+  -- write happens here in-script; the workflow passes $GITHUB_OUTPUT as argv[0].
+  let line = if shouldRun then "should_run=true\n" else "should_run=false\n"
+  Text.appendFile outPath line

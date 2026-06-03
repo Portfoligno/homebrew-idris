@@ -25,6 +25,16 @@ runChecked = \label -> \proc -> do
     (\code -> Exit.die (Text.concat [label, " failed with exit code ", Show.show code]))
     result
 
+-- Rewrite a literal token in a text file, failing loudly if it is absent.
+-- Used to repoint the versioned keg's relocation token; the file must contain
+-- the old token (it is baked in by the unversioned bottle), so a missing token
+-- means the bottle layout changed and the rewrite would silently no-op.
+rewriteToken = \path -> \oldToken -> \newToken -> do
+  contents <- Text.readFile path
+  Monad.when (Bool.not (Text.isInfixOf oldToken contents))
+    (Exit.die (Text.concat ["rewriteToken: token not found in ", path, ": ", oldToken]))
+  Text.writeFile path (Text.replace oldToken newToken contents)
+
 -- Extract the version string from the main formula.
 extractVersion = do
   formulaContents <- Text.readFile "Formula/idris2-pack.rb"
@@ -63,34 +73,68 @@ processBottle = \releaseTag -> \version -> \assetName -> do
   Main.runChecked "mv directory"
     (Process.proc "mv" [srcDir, dstDir])
 
-  -- Rename receipt JSON inside .brew/ directory
+  -- Rename the in-bottle receipt .rb to the versioned name.
+  -- Homebrew expects <name>/<version>/.brew/<name>.rb, where <name> is the
+  -- bottle's top-level dir (now idris2-pack@<version>). So the receipt stem
+  -- must become the full formula name: idris2-pack@<version>.rb (@, no dash).
+  -- This is a different convention from the release-asset name: the asset uses
+  -- a single dash (idris2-pack@<version>-<version>...), the receipt uses @.
+  -- The receipt is always written as .brew/idris2-pack.rb when the source
+  -- formula name is idris2-pack, so the path is deterministic; a failed rename
+  -- here is a hard error rather than a silent skip.
   let brewDir = Text.concat [dstDir, "/", version, "/.brew"]
-  (lsExit, lsOut, _lsErr) <- Text.readProcess
-    (Process.proc "find" [brewDir, "-name", "idris2-pack--*", "-type", "f"])
-  Exit.exitCode
-    (do
-      let files = List.filter (\f -> Bool.not (Eq.eq f "")) (Text.splitOn "\n" (Text.strip lsOut))
-      Monad.mapM_ (\oldPath -> do
-        -- Extract filename from path by finding everything after last /
-        let reversedPath = Text.reverse oldPath
-        let (revName, _revRest) = Text.breakOn "/" reversedPath
-        let oldName = Text.reverse revName
-        let newName = Text.replace "idris2-pack--" (Text.concat ["idris2-pack@", version, "--"]) oldName
-        let newPath = Text.replace oldName newName oldPath
-        Main.runChecked "rename receipt"
-          (Process.proc "mv" [oldPath, newPath])
-        ) files
-    )
-    (\_ -> IO.pure ())
-    lsExit
+  let oldReceipt = Text.concat [brewDir, "/idris2-pack.rb"]
+  let newReceipt = Text.concat [brewDir, "/idris2-pack@", version, ".rb"]
+  Main.runChecked "rename receipt"
+    (Process.proc "mv" [oldReceipt, newReceipt])
 
-  -- Create versioned asset name
-  let versionedName = Text.replace "idris2-pack-" (Text.concat ["idris2-pack@", version, "--"]) assetName
+  -- Rewrite the relocation token in the wrapper scripts so the versioned keg
+  -- points at its own cellar path. The unversioned bottle bakes
+  -- @@HOMEBREW_CELLAR@@/idris2-pack/<version> into bin/pack (LIBEXEC=) and the
+  -- idris2 toolchain wrapper (IDRIS2_PREFIX + exec path). After renaming the
+  -- top dir to idris2-pack@<version>, the keg lives at
+  -- @@HOMEBREW_CELLAR@@/idris2-pack@<version>/<version>, so the token must read
+  -- idris2-pack@<version>/<version> -- otherwise the versioned keg's wrappers
+  -- resolve to the unversioned keg's (possibly absent) path on pour.
+  -- Relocation is content-token-based and position-independent (keg_relocate),
+  -- so a literal in-file substring rewrite is safe; only the keg-name path
+  -- component changes. Done as read/replace/write (no regex).
+  let oldToken = Text.concat ["@@HOMEBREW_CELLAR@@/idris2-pack/", version]
+  let newToken = Text.concat ["@@HOMEBREW_CELLAR@@/idris2-pack@", version, "/", version]
+  let packWrapper = Text.concat [dstDir, "/", version, "/bin/pack"]
+  let idrisWrapper = Text.concat [dstDir, "/", version, "/libexec/idris2-toolchain/bin/idris2"]
+  Main.rewriteToken packWrapper oldToken newToken
+  Main.rewriteToken idrisWrapper oldToken newToken
+
+  -- Create versioned asset name. Single dash, NOT double: brew install (with
+  -- this tap's custom root_url) requests idris2-pack@<version>-<version>.<tag>
+  -- .bottle.tar.gz. brew bottle generates a double dash; the uploader must
+  -- rename to a single dash, which is what this produces.
+  let versionedName = Text.replace "idris2-pack-" (Text.concat ["idris2-pack@", version, "-"]) assetName
   let versionedPath = Text.concat [workdir, "/", versionedName]
 
-  -- Repackage
+  -- Intermediate uncompressed tar path: the final asset name with its trailing
+  -- .gz stripped, so `gzip -n -f` rewrites it back to exactly versionedPath.
+  let tarPath = Text.replace ".tar.gz" ".tar" versionedPath
+
+  -- Repackage deterministically (GNU tar reproducible recipe + separate
+  -- `gzip -n`), so a re-run of the migration that re-derives this bottle
+  -- converges to the same bytes and the same SHA -- no spurious formula churn.
+  -- Plain `tar -czf` stamps the current time into the gzip header
+  -- (non-deterministic) and would mint a fresh SHA on every run. LC_ALL=C
+  -- makes --sort=name byte-stable across machines.
   Main.runChecked "tar repackage"
-    (Process.proc "tar" ["-czf", versionedPath, "-C", workdir, Text.concat ["idris2-pack@", version]])
+    (Process.setEnv [("LC_ALL", "C")]
+      (Process.proc "tar"
+        [ "--create", "--numeric-owner", "--sort=name", "--mtime=@1"
+        , "--owner=0", "--group=0", "--format=pax"
+        , "--pax-option=globexthdr.name=/GlobalHead.%n,exthdr.name=%d/PaxHeaders/%f,delete=atime,delete=ctime"
+        , "-C", workdir, "-f", tarPath, Text.concat ["idris2-pack@", version]
+        ]))
+  -- gzip -n -f rewrites tarPath in place to tarPath ++ ".gz" == versionedPath,
+  -- dropping the gzip header's mtime and original filename. No pipe/redirect.
+  Main.runChecked "gzip repackage"
+    (Process.proc "gzip" ["-n", "-f", tarPath])
 
   -- Compute SHA256
   sha <- Main.readChecked "shasum"

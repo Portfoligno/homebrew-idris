@@ -1,0 +1,86 @@
+# Autonomous one-shot bottle migration. No human intervention during or after.
+#
+#   Op A (rename): byte-preserving rename of the double-dash versioned bottle
+#     assets to the single-dash name brew install requests. Additive, safe.
+#   Op B (patch 2026.05.29): publishes the patched unversioned bottle under a
+#     NEW rebuild .1 name (the base bottle stays live and consistent), regenerates
+#     the single-dash versioned bottles, and lands a SINGLE atomic commit of both
+#     formula files (adding `rebuild 1`) as the only brew-visible state flip. The
+#     orphaned double-dash assets are deleted afterwards as cosmetic cleanup.
+#
+# Triggering: a `schedule` cron provides crash-proof liveness -- it re-runs until
+# the migration is complete, then no-ops cheaply (the `gate` job below detects
+# completion from live state and skips `migrate`). A zero-input
+# `workflow_dispatch` is kept purely as a break-glass kick-off. The migration's
+# own commit is pushed with GITHUB_TOKEN, which lands the commit but fires no
+# downstream workflow (Actions recursion prevention) -- so it cannot loop.
+#
+# Self-retirement is EMERGENT: once the world matches the target, every trigger
+# routes through `gate`, which returns should_run=false, and `migrate` is
+# skipped. The lingering workflow file is permanently inert. (GITHUB_TOKEN cannot
+# push changes under .github/workflows/**, so the file is not self-deleted; the
+# state-derived no-op is the retirement mechanism.)
+name: Migrate bottles (one-shot, auto)
+
+on:
+  schedule:
+    # Off-:00 minutes to avoid fleet-wide top-of-hour pileups. ~15-min cadence
+    # gives crash-proof liveness; a completed migration no-ops in the gate job.
+    - cron: "3,18,33,48 * * * *"
+  workflow_dispatch:
+    # No inputs. The single trigger is the one-shot initiation; the run is fully
+    # autonomous. Safety is the in-script fail-closed pre-flight, not a human.
+
+permissions:
+  contents: read
+
+concurrency:
+  group: migrate-bottles
+  # Never cancel a half-done mutation: a second trigger queues behind the first.
+  cancel-in-progress: false
+
+jobs:
+  # Lightweight, state-derived completion check. Emits should_run; the migrate
+  # job runs only when work remains. A completed migration short-circuits here.
+  gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      should_run: ${{ steps.gate.outputs.should_run }}
+    steps:
+      - name: Checkout tap
+        uses: actions/checkout@v6
+
+      - name: Setup Hell
+        uses: ./.github/actions/setup-hell
+
+      - name: Compute completion gate
+        id: gate
+        run: ./scripts/migrate-gate.hell "$GITHUB_OUTPUT"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  migrate:
+    needs: gate
+    if: needs.gate.outputs.should_run == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout tap
+        uses: actions/checkout@v6
+
+      - name: Setup Hell
+        uses: ./.github/actions/setup-hell
+
+      # Op B commits the updated sha256 lines; needs a git identity.
+      - name: Set up git
+        uses: Homebrew/actions/git-user-config@main
+
+      - name: Run migration
+        run: ./scripts/migrate-bottles.hell
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
