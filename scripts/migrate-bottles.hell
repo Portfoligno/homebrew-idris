@@ -409,8 +409,12 @@ patchUnversioned = \tag -> \version -> \assetName -> do
       -- Fail loud if the broken marker survived (find string did not match).
       Monad.when (Text.isInfixOf Main.brokenMarker patched)
         (Exit.die (Text.concat ["patch failed: broken marker still present in ", packPath]))
+      -- The bottle stores bin/pack read-only (tar -x -p preserved that), so make
+      -- it writable before overwriting; restore 0755 afterward (writeFile may
+      -- also mint a 0644 inode).
+      Main.runChecked "chmod +w pack"
+        (Process.proc "chmod" ["u+w", packPath])
       Text.writeFile packPath patched
-      -- Text.writeFile may mint a 0644 inode; the source installs 0755.
       Main.runChecked "chmod pack"
         (Process.proc "chmod" ["0755", packPath])
       gz <- Main.repack workdir (Text.concat ["idris2-pack/", version]) rebuildName
@@ -461,8 +465,17 @@ regenVersioned = \tag -> \version -> \assetName -> do
   -- Repoint the relocation token to the versioned keg path.
   let oldToken = Text.concat ["@@HOMEBREW_CELLAR@@/idris2-pack/", version]
   let newToken = Text.concat ["@@HOMEBREW_CELLAR@@/idris2-pack@", version, "/", version]
-  Main.rewriteToken (Text.concat [dstDir, "/", version, "/bin/pack"]) oldToken newToken
-  Main.rewriteToken (Text.concat [dstDir, "/", version, "/libexec/idris2-toolchain/bin/idris2"]) oldToken newToken
+  -- bin/pack and the idris2 wrapper are extracted read-only (tar -x -p); make
+  -- them writable before rewriteToken's writeFile, and restore 0755 afterward
+  -- (they must stay executable in the repacked bottle).
+  let packFile = Text.concat [dstDir, "/", version, "/bin/pack"]
+  let idrisWrapper = Text.concat [dstDir, "/", version, "/libexec/idris2-toolchain/bin/idris2"]
+  Main.runChecked "chmod +w pack" (Process.proc "chmod" ["u+w", packFile])
+  Main.rewriteToken packFile oldToken newToken
+  Main.runChecked "chmod pack" (Process.proc "chmod" ["0755", packFile])
+  Main.runChecked "chmod +w idris2" (Process.proc "chmod" ["u+w", idrisWrapper])
+  Main.rewriteToken idrisWrapper oldToken newToken
+  Main.runChecked "chmod idris2" (Process.proc "chmod" ["0755", idrisWrapper])
 
   -- Single-dash versioned asset name (derived from the unversioned base name).
   let versionedName = Text.replace "idris2-pack-" (Text.concat ["idris2-pack@", version, "-"]) assetName
