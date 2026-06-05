@@ -35,6 +35,41 @@ rewriteToken = \path -> \oldToken -> \newToken -> do
     (Exit.die (Text.concat ["rewriteToken: token not found in ", path, ": ", oldToken]))
   Text.writeFile path (Text.replace oldToken newToken contents)
 
+-- Guarded in-memory replace: like Text.replace, but die if the anchor is
+-- absent (so an anchor drift becomes a hard error, not a silent no-op).
+replaceChecked = \label -> \needle -> \repl -> \contents -> do
+  Monad.when (Bool.not (Text.isInfixOf needle contents))
+    (Exit.die (Text.concat [label, ": anchor not found: ", needle]))
+  IO.pure (Text.replace needle repl contents)
+
+-- Update the bottle sha256 for a single os tag in a formula file, guarded.
+-- Reads the file, anchors on `sha256 cellar: :any, <osTag>:`, reads back the
+-- currently-quoted digest after that anchor, and rewrites exactly that quoted
+-- token to newSha (the 64-hex token is unique), then writes the file. Dies if
+-- the anchor is absent or the digest is not double-quoted, so a layout drift is
+-- a hard error rather than the silent no-op that `sed` (exit 0 on 0 subs)
+-- produced. In-memory Text.replace -- no external sed, no regex, no string-built
+-- command argument.
+updateBottleSha = \path -> \osTag -> \newSha -> do
+  contents <- Text.readFile path
+  let anchor = Text.concat ["sha256 cellar: :any, ", osTag, ":"]
+  Monad.when (Bool.not (Text.isInfixOf anchor contents))
+    (Exit.die (Text.concat ["updateBottleSha: anchor not found in ", path, ": ", anchor]))
+  let (_before, afterAnchor) = Text.breakOn anchor contents
+  -- afterAnchor starts with the anchor; drop it, then take the first quoted run.
+  let afterAnchorBody = Text.drop (Text.length anchor) afterAnchor
+  let (_pre, fromQuote) = Text.breakOn "\"" afterAnchorBody
+  Monad.when (Eq.eq (Text.length fromQuote) 0)
+    (Exit.die (Text.concat ["updateBottleSha: no opening quote after ", anchor]))
+  let afterOpenQuote = Text.drop 1 fromQuote
+  let (oldSha, closing) = Text.breakOn "\"" afterOpenQuote
+  Monad.when (Eq.eq (Text.length closing) 0)
+    (Exit.die (Text.concat ["updateBottleSha: no closing quote after ", anchor]))
+  let oldToken = Text.concat ["\"", oldSha, "\""]
+  let newToken = Text.concat ["\"", newSha, "\""]
+  newContents <- Main.replaceChecked "updateBottleSha" oldToken newToken contents
+  Text.writeFile path newContents
+
 -- Extract the version string from the main formula.
 extractVersion = do
   formulaContents <- Text.readFile "Formula/idris2-pack.rb"
@@ -59,13 +94,13 @@ processBottle = \releaseTag -> \version -> \assetName -> do
 
   -- Download the asset
   Main.runChecked (Text.concat ["gh release download ", assetName])
-    (Process.proc "gh" ["release", "download", releaseTag, "--pattern", assetName, "--dir", workdir])
+    (Process.proc "gh" ["release", "download", releaseTag, "--pattern", assetName, "--dir", workdir, "--clobber"])
 
   let assetPath = Text.concat [workdir, "/", assetName]
 
   -- Extract the bottle
   Main.runChecked "tar extract"
-    (Process.proc "tar" ["-xf", assetPath, "-C", workdir])
+    (Process.proc "tar" ["-x", "-p", "-f", assetPath, "-C", workdir])
 
   -- Rename the top-level directory
   let srcDir = Text.concat [workdir, "/idris2-pack"]
@@ -103,8 +138,16 @@ processBottle = \releaseTag -> \version -> \assetName -> do
   let newToken = Text.concat ["@@HOMEBREW_CELLAR@@/idris2-pack@", version, "/", version]
   let packWrapper = Text.concat [dstDir, "/", version, "/bin/pack"]
   let idrisWrapper = Text.concat [dstDir, "/", version, "/libexec/idris2-toolchain/bin/idris2"]
+  -- bin/pack and the idris2 wrapper are extracted read-only (tar -x -p); make
+  -- them writable before rewriteToken's writeFile, and restore 0755 afterward
+  -- (they must stay executable in the repacked bottle; writeFile may also mint a
+  -- 0644 inode).
+  Main.runChecked "chmod +w pack" (Process.proc "chmod" ["u+w", packWrapper])
   Main.rewriteToken packWrapper oldToken newToken
+  Main.runChecked "chmod pack" (Process.proc "chmod" ["0755", packWrapper])
+  Main.runChecked "chmod +w idris2" (Process.proc "chmod" ["u+w", idrisWrapper])
   Main.rewriteToken idrisWrapper oldToken newToken
+  Main.runChecked "chmod idris2" (Process.proc "chmod" ["0755", idrisWrapper])
 
   -- Create versioned asset name. Single dash, NOT double: brew install (with
   -- this tap's custom root_url) requests idris2-pack@<version>-<version>.<tag>
@@ -143,7 +186,15 @@ processBottle = \releaseTag -> \version -> \assetName -> do
 
   -- Extract OS tag from asset name
   -- idris2-pack-2026.05.25.arm64_sequoia.bottle.tar.gz -> arm64_sequoia
-  let withoutFormula = Text.replace (Text.concat ["idris2-pack-", version, "."]) "" assetName
+  -- Derive osTag only after confirming the canonical base-bottle prefix and the
+  -- .bottle.tar.gz suffix were both present; otherwise the parse would silently
+  -- yield garbage (e.g. for a rebuild or an already-versioned asset).
+  let formulaPrefix = Text.concat ["idris2-pack-", version, "."]
+  Monad.when (Bool.not (Text.isPrefixOf formulaPrefix assetName))
+    (Exit.die (Text.concat ["processBottle: not a canonical base bottle: ", assetName]))
+  let withoutFormula = Text.replace formulaPrefix "" assetName
+  Monad.when (Bool.not (Text.isSuffixOf ".bottle.tar.gz" withoutFormula))
+    (Exit.die (Text.concat ["processBottle: missing .bottle.tar.gz suffix: ", assetName]))
   let (osTag, _bottleSuffix) = Text.breakOn ".bottle.tar.gz" withoutFormula
 
   -- Upload repackaged bottle
@@ -169,41 +220,54 @@ main = do
   content <- Text.readFile "Formula/idris2-pack.rb"
 
   -- Rename class: Idris2Pack -> Idris2PackATYYYYMMDD (dots removed from version)
+  -- Both rewrites are guarded: a missing anchor (formula reformatted) is a hard
+  -- error, not a silent no-op that would emit a class-colliding/non-keg-only file.
   let classSuffix = Text.replace "." "" version
-  let content2 = Text.replace "class Idris2Pack < Formula" (Text.concat ["class Idris2PackAT", classSuffix, " < Formula"]) content
+  content2 <- Main.replaceChecked "class rename"
+    "class Idris2Pack < Formula"
+    (Text.concat ["class Idris2PackAT", classSuffix, " < Formula"])
+    content
 
   -- Insert keg_only after the bottle end block
-  let content3 = Text.replace "  end\n\n  depends_on" "  end\n\n  keg_only :versioned_formula\n\n  depends_on" content2
+  content3 <- Main.replaceChecked "keg_only insert"
+    "  end\n\n  depends_on"
+    "  end\n\n  keg_only :versioned_formula\n\n  depends_on"
+    content2
 
-  -- Write intermediate formula (will update SHAs after repackaging)
-  Text.writeFile outputPath content3
-
-  -- List bottle assets from the release
-  (ghExit, ghOut, _ghErr) <- Text.readProcess
+  -- List bottle assets from the release. A gh failure (network/auth/wrong tag)
+  -- must be fatal, not conflated with an empty release via an "" sentinel.
+  (ghExit, ghOut, ghErr) <- Text.readProcess
     (Process.proc "gh" ["release", "view", releaseTag, "--json", "assets", "-q", ".assets[].name"])
 
   assetsRaw <- Exit.exitCode
     (IO.pure (Text.strip ghOut))
-    (\code -> do
-      Text.putStrLn "WARNING: No release found or no assets"
-      IO.pure ""
-    )
+    (\code -> Exit.die (Text.concat ["gh release view failed with exit code ", Show.show code, " for ", releaseTag, ": ", ghErr]))
     ghExit
 
   let allAssets = Text.splitOn "\n" assetsRaw
-  let bottleAssets = List.filter (\a -> Text.isSuffixOf ".bottle.tar.gz" a) allAssets
+  -- Restrict to canonical base bottles: prefix idris2-pack-<version>. and the
+  -- plain .bottle.tar.gz suffix. This excludes this script's own versioned
+  -- (idris2-pack@<v>-...) uploads and rebuild (.bottle.N.) assets, so a re-run
+  -- never re-selects its own artifacts.
+  let basePrefix = Text.concat ["idris2-pack-", version, "."]
+  let bottleAssets = List.filter
+        (\a -> if Text.isPrefixOf basePrefix a
+                 then Text.isSuffixOf ".bottle.tar.gz" a
+                 else Bool.False)
+        allAssets
 
-  -- Process each bottle and collect (osTag, sha) pairs
+  -- Write the intermediate formula (placeholder SHAs); each bottle's SHA is then
+  -- patched in via a guarded in-memory replace -- no external sed, no regex, no
+  -- string-built command argument, and a missing tag is a hard error (not the
+  -- silent no-op `sed` produced).
+  Text.writeFile outputPath content3
+
   if Eq.eq (List.length bottleAssets) 0
     then Text.putStrLn "WARNING: No bottle assets found"
-    else do
-      -- Process bottles and update formula SHA256s
+    else
       Monad.mapM_ (\assetName -> do
         (osTag, newSha) <- Main.processBottle releaseTag version assetName
-        -- Update SHA in the versioned formula using sed
-        -- Pattern: sha256 cellar: :any, <os_tag>: "old_sha"
-        Main.runChecked "sed update SHA"
-          (Process.proc "sed" ["-i", Text.concat ["s/\\(sha256 cellar: :any, *", osTag, ": *\\)\"[a-f0-9]*\"/\\1\"", newSha, "\"/"], outputPath])
+        Main.updateBottleSha outputPath osTag newSha
         ) bottleAssets
 
   Text.putStrLn (Text.concat ["Versioned formula written to ", outputPath])
