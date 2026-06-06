@@ -289,32 +289,39 @@ opAPreflightRelease = \tag -> do
 opBPreflight = \version -> do
   let tag = Text.concat ["idris2-pack-", version]
   let unvFormula = "Formula/idris2-pack.rb"
-  names <- Main.assetNames tag
-  let bottles = List.filter (\a -> Text.isSuffixOf ".bottle.tar.gz" a) names
-  let verMarker = Text.concat ["idris2-pack@", version]
-  -- The canonical (non-rebuild) unversioned base bottles: no @<v> marker AND not
-  -- the rebuild .1 asset.
-  let unversioned =
-        List.filter (\a -> Bool.not (Text.isInfixOf verMarker a))
-          (List.filter (\a -> Bool.not (Text.isInfixOf ".bottle.1.tar.gz" a)) bottles)
-
-  -- (4) there must be at least one unversioned bottle to repair.
-  Monad.when (Eq.eq (List.length unversioned) 0)
-    (Exit.die "preflight-B: no unversioned base bottles found on the release")
-
-  Monad.mapM_ (\a -> do
-    marker <- Main.bottleHasBrokenMarker tag version a
-    if marker
-      then do
-        -- Un-migrated arch: the base bottle must still match the broken-era
-        -- formula sha (so the world is exactly what this migration expects).
-        osTag <- Main.osTagOfUnversioned version a
-        expected <- Main.formulaSha unvFormula osTag
-        Main.verifyAssetSha "preflight-B(unversioned)" tag a expected
-      else
-        -- Already patched on this arch: a prior run fixed it. This is a valid
-        -- resumable state; nothing to assert (the run re-shas and re-flips).
-        Text.putStrLn (Text.concat ["  [preflight-B] ", a, " already patched (resumable)"])) unversioned
+  -- Op B publishes its fix as the .1 rebuild and leaves the base bottle UNTOUCHED
+  -- (still broken-marked), then flips idris2-pack.rb to a `rebuild` line whose sha
+  -- is the .1's. So once ANY `rebuild ` line exists, Op B is done: the base bottle
+  -- is intentionally stale and must NOT be re-asserted against the (now .1) formula
+  -- sha. Match the substring "rebuild " so this also holds after Op D's `rebuild 2`.
+  unvFormulaContents <- Text.readFile unvFormula
+  if Text.isInfixOf "rebuild " unvFormulaContents
+    then Text.putStrLn "  [preflight-B] idris2-pack.rb already rebuilt (resumable)"
+    else do
+      names <- Main.assetNames tag
+      let bottles = List.filter (\a -> Text.isSuffixOf ".bottle.tar.gz" a) names
+      let verMarker = Text.concat ["idris2-pack@", version]
+      -- The canonical (non-rebuild) unversioned base bottles: no @<v> marker AND not
+      -- the rebuild .1 asset.
+      let unversioned =
+            List.filter (\a -> Bool.not (Text.isInfixOf verMarker a))
+              (List.filter (\a -> Bool.not (Text.isInfixOf ".bottle.1.tar.gz" a)) bottles)
+      -- (4) there must be at least one unversioned bottle to repair.
+      Monad.when (Eq.eq (List.length unversioned) 0)
+        (Exit.die "preflight-B: no unversioned base bottles found on the release")
+      Monad.mapM_ (\a -> do
+        marker <- Main.bottleHasBrokenMarker tag version a
+        if marker
+          then do
+            -- Un-migrated arch: the base bottle must still match the broken-era
+            -- formula sha (so the world is exactly what this migration expects).
+            osTag <- Main.osTagOfUnversioned version a
+            expected <- Main.formulaSha unvFormula osTag
+            Main.verifyAssetSha "preflight-B(unversioned)" tag a expected
+          else
+            -- Already patched on this arch: a prior run fixed it. This is a valid
+            -- resumable state; nothing to assert (the run re-shas and re-flips).
+            Text.putStrLn (Text.concat ["  [preflight-B] ", a, " already patched (resumable)"])) unversioned
 
 -- Op C pre-flight for one already-snapshotted release (NOT 2026.05.29). The
 -- existing single-dash versioned bottle bakes the WRONG unversioned relocation
