@@ -93,6 +93,35 @@ rewriteToken = \path -> \oldToken -> \newToken -> do
     (Exit.die (Text.concat ["rewriteToken: token not found in ", path, ": ", oldToken]))
   Text.writeFile path (Text.replace oldToken newToken contents)
 
+-- Binary-safe LINE-1 shebang rewrite for a compiled Chez `--program` boot
+-- object (.so). The file is `#!<chez> --program\n\n<binary>` where line 1 is
+-- pure ASCII and everything after the first \n is non-UTF-8 binary that MUST
+-- stay byte-identical. rewriteToken's `Text.readFile` dies on the first
+-- non-UTF-8 byte; this splits at the first newline instead:
+--   * head -n 1   -> line 1 ONLY (stops AT the first \n, so it is pure ASCII and
+--                    safe to capture as Text via readChecked, which does NOT
+--                    strip the trailing \n); literal token swap on that line.
+--   * tail -n +2  -> EVERYTHING after the first \n, streamed verbatim into the
+--                    rebuilt file via setStdout, never through Hell's decoder.
+-- readChecked preserves line 1's trailing \n, so `Text.writeFile outPath
+-- newLine1` writes `#!NEW --program\n` and `tail -n +2` appends `\n<binary>`,
+-- reproducing the original `\n\n<binary>` shape with line 1 swapped. mv renames
+-- the rebuilt file over the original. Same (path, old, new) arg order as
+-- rewriteToken; dies loud if the token is absent from line 1.
+rewriteShebangBinary = \path -> \oldToken -> \newToken -> do
+  line1 <- Main.readChecked "head -n 1 shebang" (Process.proc "head" ["-n", "1", path])
+  Monad.when (Bool.not (Text.isInfixOf oldToken line1))
+    (Exit.die (Text.concat ["rewriteShebangBinary: token not in line 1 of ", path]))
+  let newLine1 = Text.replace oldToken newToken line1
+  let outPath = Text.concat [path, ".reshebang"]
+  Main.runChecked "pre-clean reshebang" (Process.proc "rm" ["-f", outPath])
+  Text.writeFile outPath newLine1
+  handle <- IO.openFile outPath IO.AppendMode
+  Main.runChecked "append binary body after shebang"
+    (Process.setStdout (Process.useHandleClose handle)
+      (Process.proc "tail" ["-n", "+2", path]))
+  Main.runChecked "mv reshebang over original" (Process.proc "mv" [outPath, path])
+
 -- Deterministic repack of a single top-level member under `workdir` to
 -- `<workdir>/<assetName>`, using the named tar binary. GNU tar reproducible
 -- recipe + separate `gzip -n` so re-runs converge to identical bytes ->
@@ -944,7 +973,7 @@ compilePackInit = \toolchainDir -> \chezExe -> \chezBinDir -> \sandbox -> do
   --    The .so extracts read-only 0555; chmod +w before, restore exec after.
   let bootSo = Text.concat [scratchToolchain, "/bin/idris2_app/idris2.so"]
   Main.runChecked "chmod +w idris2.so" (Process.proc "chmod" ["u+w", bootSo])
-  Main.rewriteToken bootSo Main.chezPlaceholderPath chezExe
+  Main.rewriteShebangBinary bootSo Main.chezPlaceholderPath chezExe
   Main.runChecked "chmod idris2.so" (Process.proc "chmod" ["0755", bootSo])
   -- 3. Compile with the relocated copy's path-free launcher (it sets the lib-path
   --    env itself; source copied into sandbox so its path is relative to CWD).
@@ -984,7 +1013,7 @@ bootShebangFixup = \libexec -> \chezPrefix -> do
   -- The .so is the compiled boot file and MUST exist; rewriteToken dies loud if
   -- the literal chez path is absent (e.g. findChez resolved something else).
   Main.runChecked "chmod +w pack-init.so" (Process.proc "chmod" ["u+w", soPath])
-  Main.rewriteToken soPath realChezPath Main.chezPlaceholderPath
+  Main.rewriteShebangBinary soPath realChezPath Main.chezPlaceholderPath
   Main.runChecked "chmod pack-init.so" (Process.proc "chmod" ["0755", soPath])
   -- .ss is only present for the --exec path; tokenize it defensively if it exists.
   hasSs <- Main.exitedZero (Process.proc "test" ["-f", ssPath])
@@ -1009,7 +1038,12 @@ bottleHasCompiledPackInit = \tag -> \version -> \assetName -> do
   let libexec = Text.concat [wd, "/idris2-pack/", version, "/libexec"]
   hasBin <- Main.exitedZero (Process.proc "test" ["-f", Text.concat [libexec, "/pack-init"]])
   contents <- Text.readFile (Text.concat [wd, "/idris2-pack/", version, "/bin/pack"])
-  boot <- Text.readFile (Text.concat [libexec, "/pack-init_app/pack-init.so"])
+  -- The compiled pack-init.so is a non-UTF-8 Chez boot object; Text.readFile
+  -- would die on its binary bytes. Assert the line-1 chez shebang token via a
+  -- fixed-string grep -q (byte-oriented, no regex, never read into Hell as Text).
+  let bootSoPath = Text.concat [libexec, "/pack-init_app/pack-init.so"]
+  let bootTok = Text.concat ["#!", Main.chezPlaceholderPath]
+  bootOk <- Main.exitedZero (Process.proc "grep" ["-F", "-q", bootTok, bootSoPath])
   -- Fail closed: the bundled idris2 toolchain MUST remain tokenized. Assert the
   -- EXACT line-1 chez shebang token survives, not just any @@HOMEBREW byte
   -- sequence: a shebang-only de-tokenization (the copy-relocate failure mode)
@@ -1023,7 +1057,6 @@ bottleHasCompiledPackInit = \tag -> \version -> \assetName -> do
   Main.runChecked "cleanup" (Process.proc "rm" ["-rf", wd])
   let hasMarker = Text.isInfixOf Main.compiledMarker contents
   let noCdExec = Bool.not (Text.isInfixOf Main.cdExecForm contents)
-  let bootOk = Text.isInfixOf Main.chezPlaceholderPath boot
   IO.pure (if hasBin then (if hasMarker then (if noCdExec then (if bootOk then tokenized else Bool.False) else Bool.False) else Bool.False) else Bool.False)
 
 -- Repair ONE unversioned .1 bottle to .2 for this arch (content-addressed,
