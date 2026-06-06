@@ -9,9 +9,9 @@ class Idris2Pack < Formula
 
   bottle do
     root_url "https://github.com/Portfoligno/homebrew-idris/releases/download/idris2-pack-2026.05.29"
-    rebuild 1
-    sha256 cellar: :any, arm64_sequoia: "ef61c793b70be95a4354857907133433dc7864c8cb0fc95de56ced015ca72792"
-    sha256 cellar: :any, arm64_sonoma:  "cafebdd51d2e880e617c5a58d411b4a819a1112ba991aad45ae228862413f564"
+    rebuild 2
+    sha256 cellar: :any, arm64_sequoia: "34465c96b9aa9f4e94e067ac3a99cb8f66ba0076ad2677df8216f6e1429f8622"
+    sha256 cellar: :any, arm64_sonoma:  "51ad3af9a3ce66d99df00e132a0440fc83de05cf6a8bc9125e36281b0d33021c"
   end
 
   depends_on "gmp" => :build
