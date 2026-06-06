@@ -16,13 +16,21 @@ module Main
 
 import Data.List
 import Data.List1
+import Data.Maybe
 import Data.String
 import System
 import System.Directory
 import System.File.Handle
 import System.File.ReadWrite
+import System.File.Virtual
 
 %default total
+
+-- Write a status/diagnostic line to stderr (so it never pollutes stdout that a
+-- caller may capture).
+covering
+ePutStrLn : String -> IO ()
+ePutStrLn str = ignore (fPutStrLn stderr str)
 
 -- ===========================================================================
 -- FFI: Symlink primitives (Chez backend, single-expression wrappers)
@@ -40,7 +48,7 @@ prim__symlink : String -> String -> PrimIO Int
 
 ||| Read a symbolic link target: readlink(path, buf, 4096).
 ||| Returns the target string as AnyPtr, or #f on error.
-%foreign "scheme,chez:(lambda (path) (let* ([bv (make-bytevector 4096)] [n ((foreign-procedure \"readlink\" (string u8* int) int) path bv 4096)]) (if (< n 0) #f (utf8->string (bytevector-copy bv 0 n)))))"
+%foreign "scheme,chez:(lambda (path) (let* ([bv (make-bytevector 4096)] [n ((foreign-procedure \"readlink\" (string u8* int) int) path bv 4096)]) (if (< n 0) #f (utf8->string (bytevector-truncate! bv n)))))"
 prim__readlink : String -> PrimIO AnyPtr
 
 ||| Check if an AnyPtr is null (#f in Chez).
@@ -55,13 +63,15 @@ prim__anyPtrToString : AnyPtr -> PrimIO String
 -- File I/O wrappers (stdlib + FFI)
 -- ===========================================================================
 
--- Read entire file contents, returning empty string on failure.
+-- Read entire file contents (trimmed), returning Nothing on failure.
+-- A Maybe result distinguishes "missing/unreadable" from "present but empty"
+-- without an empty-string sentinel.
 covering
-readFileOr : String -> String -> IO String
-readFileOr path fallback = do
+readFileMaybe : String -> IO (Maybe String)
+readFileMaybe path = do
   Right contents <- readFile path
-    | Left _ => pure fallback
-  pure (trim contents)
+    | Left _ => pure Nothing
+  pure (Just (trim contents))
 
 -- Check if a path exists (file or directory).
 covering
@@ -107,14 +117,56 @@ readLink path = do
       target <- primIO (prim__anyPtrToString ptr)
       pure (Just target)
 
--- Create a symlink (force: remove existing target first).
--- Returns True on success, False on failure.
+-- Check if a path is a readable directory (listDir succeeds iff so).
+-- Reuses stdlib instead of adding a new FFI.
 covering
-createSymlink : String -> String -> IO Bool
-createSymlink target linkPath = do
-  _ <- removeFile linkPath  -- remove existing (ignore errors)
+pathIsDirectory : String -> IO Bool
+pathIsDirectory path = do
+  Right _ <- listDir path
+    | Left _ => pure False
+  pure True
+
+-- Call symlink(2) on a path that callers have already established is absent.
+-- Because the path is absent, EEXIST is structurally impossible, so any
+-- nonzero return is a genuine error -> die (fail-fast). No errno needed.
+covering
+rawSymlink : String -> String -> IO ()
+rawSymlink target linkPath = do
   r <- primIO (prim__symlink target linkPath)
-  pure (r == 0)
+  when (r /= 0) $
+    die ("pack-init: symlink failed: " ++ target ++ " -> " ++ linkPath)
+
+-- Create a symlink with `ln -sf` force semantics, hardened per path type.
+-- Pre-classifying the path makes EEXIST impossible (so the FFI stays a simple
+-- one-expression wrapper with no errno inspection) and turns every ambiguous
+-- case into an explicit decision:
+--   NoEntry           -> create
+--   IsLink, correct   -> no-op (idempotent)
+--   IsLink, wrong     -> remove the link (die if removal fails) then create
+--   IsLink, unreadable-> die (lstat said symlink but readlink failed)
+--   NotLink + dir     -> leave it (a pack-managed real toolchain directory)
+--   NotLink + file    -> die (a stray regular file is anomalous; never clobber)
+covering
+createSymlink : String -> String -> IO ()
+createSymlink target linkPath = do
+  status <- checkSymlink linkPath
+  case status of
+    NoEntry => rawSymlink target linkPath
+    IsLink => do
+      mCurrent <- readLink linkPath
+      case mCurrent of
+        Just current =>
+          when (current /= target) $ do
+            Right () <- removeFile linkPath
+              | Left err => die ("pack-init: cannot remove existing symlink "
+                                 ++ linkPath ++ ": " ++ show err)
+            rawSymlink target linkPath
+        Nothing =>
+          die ("pack-init: readlink failed on symlink: " ++ linkPath)
+    NotLink => do
+      isDir <- pathIsDirectory linkPath
+      when (not isDir) $
+        die ("pack-init: refusing to overwrite non-symlink: " ++ linkPath)
 
 -- Create directories recursively (like mkdir -p), helper.
 covering
@@ -129,8 +181,11 @@ mkdirPGo isRoot pfx dirs =
       let fullDir = if isRoot && pfx == ""
                       then "/" ++ d
                       else dir
+      -- An already-present component is fine, but we must keep descending to
+      -- create the deeper ones (a leading "/" or "/tmp" always exists, so
+      -- stopping here would never create the nested install/<commit> dir).
       Right _ <- createDir fullDir
-        | Left FileExists => pure ()
+        | Left FileExists => mkdirPGo isRoot fullDir ds
         | Left err => die ("pack-init: mkdir failed for " ++ fullDir ++ ": " ++ show err)
       mkdirPGo isRoot fullDir ds
 
@@ -188,8 +243,11 @@ getPackStateDir = do
 covering
 readMetadata : String -> IO (Maybe (String, String))
 readMetadata libexec = do
-  collection <- readFileOr (libexec ++ "/COLLECTION") ""
-  commit <- readFileOr (libexec ++ "/IDRIS2_COMMIT") ""
+  Just collection <- readFileMaybe (libexec ++ "/COLLECTION")
+    | Nothing => pure Nothing
+  Just commit <- readFileMaybe (libexec ++ "/IDRIS2_COMMIT")
+    | Nothing => pure Nothing
+  -- A present-but-blank metadata file is still invalid.
   if collection == "" || commit == ""
     then pure Nothing
     else pure (Just (collection, commit))
@@ -197,17 +255,22 @@ readMetadata libexec = do
 -- Walk up from a path to find the Homebrew opt directory.
 -- Looks for "Cellar" or "opt" directory names in the path.
 covering
+-- Keep the LAST (innermost) "Cellar"/"opt" match. On Apple Silicon the path
+-- /opt/homebrew/opt/<formula>/libexec contains "opt" twice; the outermost match
+-- yields /opt (wrong, drops all siblings), the innermost yields
+-- /opt/homebrew/opt (correct). Matches the original python innermost-going-up.
 findOptDir : String -> Maybe String
 findOptDir path =
   let parts = forget (split (== '/') path)
-  in findOpt parts []
+  in findOpt parts [] Nothing
   where
-    findOpt : List String -> List String -> Maybe String
-    findOpt [] _ = Nothing
-    findOpt (x :: rest) acc =
-      if x == "Cellar" || x == "opt"
-        then Just (joinBy "/" (reverse acc) ++ "/opt")
-        else findOpt rest (x :: acc)
+    findOpt : List String -> List String -> Maybe String -> Maybe String
+    findOpt [] _ best = best
+    findOpt (x :: rest) acc best =
+      let best' = if x == "Cellar" || x == "opt"
+                    then Just (joinBy "/" (reverse acc) ++ "/opt")
+                    else best
+      in findOpt rest (x :: acc) best'
 
 -- Discover installed formula libexec directories (main + versioned).
 -- Returns list of (commit, libexec_path) pairs.
@@ -251,30 +314,12 @@ covering
 createSymlinks : String -> List (String, String) -> IO ()
 createSymlinks installDir commits = do
   traverse_ (\(commit, libexec) => do
-    let target = installDir ++ "/" ++ commit ++ "/idris2"
+    let linkPath = installDir ++ "/" ++ commit ++ "/idris2"
     let toolchain = libexec ++ "/idris2-toolchain"
-    status <- checkSymlink target
-    case status of
-      IsLink => do
-        mTarget <- readLink target
-        case mTarget of
-          Just currentTarget =>
-            if currentTarget /= toolchain
-              then do removeFileForce target
-                      ok <- createSymlink toolchain target
-                      when (not ok) $
-                        die ("pack-init: symlink failed: "
-                             ++ toolchain ++ " -> " ++ target)
-              else pure ()
-          Nothing =>
-            die ("pack-init: readlink failed on symlink: " ++ target)
-      NotLink => pure ()  -- real directory (pack-managed), leave it
-      NoEntry => do
-        mkdirP (installDir ++ "/" ++ commit)
-        ok <- createSymlink toolchain target
-        when (not ok) $
-          die ("pack-init: symlink failed: "
-               ++ toolchain ++ " -> " ++ target)
+    -- Ensure the parent dir exists for the fresh-install case; createSymlink
+    -- then makes the per-type decision (create / relink / leave dir / die).
+    mkdirP (installDir ++ "/" ++ commit)
+    createSymlink toolchain linkPath
     ) commits
 
 -- Clean up stale symlinks from previously-installed formulas.
@@ -300,7 +345,7 @@ cleanupStaleSymlinks installDir seenCommits = do
                           tryRmdir fullPath
                   else pure ()
               Nothing =>
-                putStrLn ("pack-init: warning: cannot read symlink: " ++ idris2Link)
+                ePutStrLn ("pack-init: warning: cannot read symlink: " ++ idris2Link)
           else pure ()
       _ => pure ()
     ) entries
@@ -309,7 +354,7 @@ covering
 main : IO ()
 main = do
   Just libexec <- getEnv "PACK_INIT_LIBEXEC"
-    | Nothing => do putStrLn "pack-init: PACK_INIT_LIBEXEC not set"
+    | Nothing => do ePutStrLn "pack-init: PACK_INIT_LIBEXEC not set"
                     exitWith (ExitFailure 1)
 
   -- Read primary formula metadata
@@ -325,17 +370,20 @@ main = do
     Just optDir => discoverFormulas optDir
     Nothing => pure []
 
-  -- Merge: primary takes precedence. Filter out duplicates by commit.
+  -- Merge: primary takes precedence. Filter out duplicates by commit, then
+  -- dedup the remainder first-wins (two non-primary formulas can share an
+  -- idris2 commit; keeping the first occurrence avoids a doubled stamp entry
+  -- and a last-wins relink).
   let knownCommits = map fst initial
   let uniqueSiblings = filter (\(c, _) => not (elem c knownCommits)) siblings
-  let allCommits = initial ++ uniqueSiblings
+  let allCommits = nubBy (\x, y => fst x == fst y) (initial ++ uniqueSiblings)
 
   -- Check stamp for early exit
   packState <- getPackStateDir
   let stampFile = packState ++ "/.brew-stamp"
   let newStamp = computeStamp primaryCollection allCommits
 
-  oldStamp <- readFileOr stampFile ""
+  oldStamp <- map (fromMaybe "") (readFileMaybe stampFile)
 
   if oldStamp == newStamp
     then exitWith ExitSuccess
@@ -367,5 +415,5 @@ main = do
   pure ()
 
   if collectionChanged
-    then putStrLn ("pack: aligned state with collection " ++ primaryCollection)
-    else putStrLn "pack: updated installed toolchain set"
+    then ePutStrLn ("pack: aligned state with collection " ++ primaryCollection)
+    else ePutStrLn "pack: updated installed toolchain set"
