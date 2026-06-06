@@ -202,6 +202,32 @@ osTagOfUnversioned = \version -> \assetName -> do
   let (osTag, _suffix) = Text.breakOn ".bottle.tar.gz" stripped
   IO.pure osTag
 
+-- arch tag from a single-dash VERSIONED asset name:
+-- idris2-pack@<v>-<v>.<arch>.bottle.tar.gz -> <arch>
+-- Mirrors osTagOfUnversioned; the literal prefix is stripped, length never
+-- hardcoded. Bound with `<-` at call sites (tuple destructuring is do-only here).
+osTagOfVersioned = \version -> \assetName -> do
+  let stripped = Text.replace (Text.concat ["idris2-pack@", version, "-", version, "."]) "" assetName
+  let (osTag, _suffix) = Text.breakOn ".bottle.tar.gz" stripped
+  IO.pure osTag
+
+-- Does the bin/pack inside an already-published single-dash VERSIONED bottle
+-- still carry the WRONG unversioned relocation token
+-- (@@HOMEBREW_CELLAR@@/idris2-pack/<v>, no `@`)? The versioned-bottle analogue of
+-- bottleHasBrokenMarker: download -> extract (`-x -p`, never `-h`) -> read the
+-- nested bin/pack -> infix test. The correct token is .../idris2-pack@<v>/<v>, so
+-- after `idris2-pack` it has `@`, not `/` -- the old token is NOT a substring of
+-- the new one, making this a false-positive-free "is-still-broken" predicate.
+-- Read-only; cleans up.
+versionedBottleHasUnversionedToken = \tag -> \version -> \assetName -> do
+  let wd = "/tmp/versioned-token-inspect"
+  path <- Main.fetchAsset tag assetName wd
+  Main.runChecked "tar extract" (Process.proc "tar" ["-x", "-p", "-f", path, "-C", wd])
+  let oldToken = Text.concat ["@@HOMEBREW_CELLAR@@/idris2-pack/", version]
+  contents <- Text.readFile (Text.concat [wd, "/idris2-pack@", version, "/", version, "/bin/pack"])
+  Main.runChecked "cleanup" (Process.proc "rm" ["-rf", wd])
+  IO.pure (Text.isInfixOf oldToken contents)
+
 -- =========================================================================
 -- PRE-FLIGHT (read-only, fail-closed). Run before ANY mutation; any mismatch
 -- with the committed formulas aborts the whole run with zero mutations.
@@ -276,6 +302,47 @@ opBPreflight = \version -> do
         -- Already patched on this arch: a prior run fixed it. This is a valid
         -- resumable state; nothing to assert (the run re-shas and re-flips).
         Text.putStrLn (Text.concat ["  [preflight-B] ", a, " already patched (resumable)"])) unversioned
+
+-- Op C pre-flight for one already-snapshotted release (NOT 2026.05.29). The
+-- existing single-dash versioned bottle bakes the WRONG unversioned relocation
+-- token; the repair repoints it in place and republishes the bytes under the
+-- `.1` rebuild name (window-free, like Op B). Two consistent worlds are accepted,
+-- the one impossible world fails closed:
+--   (i) un-repaired: the committed @<v>.rb carries NO `rebuild 1` line, so each
+--       still-live single-dash versioned bottle MUST match the committed (broken)
+--       sha AND still carry the unversioned token. A bottle that matches the
+--       broken sha but LACKS the token is the impossible formula/bytes-disagree
+--       state -> abort the whole run with zero mutations.
+--   (ii) already repaired: the committed @<v>.rb already has `rebuild 1` (the
+--       atomic flip landed on a prior run). Nothing to assert -- the release is
+--       done and opCRelease will skip it.
+opCPreflightRelease = \version -> do
+  let tag = Text.concat ["idris2-pack-", version]
+  let formula = Text.concat ["Formula/idris2-pack@", version, ".rb"]
+  formulaContents <- Text.readFile formula
+  if Text.isInfixOf "rebuild 1" formulaContents
+    then Text.putStrLn (Text.concat ["  [preflight-C] ", formula, " already rebuilt (resumable)"])
+    else do
+      names <- Main.assetNames tag
+      let bottles = List.filter (\a -> Text.isSuffixOf ".bottle.tar.gz" a) names
+      -- Single-dash versioned bottles: carry "@<v>-<v>" but NOT "@<v>--<v>" and
+      -- not the rebuild .1 asset.
+      let singleInfix = Text.concat ["@", version, "-", version]
+      let doubleInfix = Text.concat ["@", version, "--", version]
+      let targets =
+            List.filter (\a -> Bool.not (Text.isInfixOf doubleInfix a))
+              (List.filter (\a -> Bool.not (Text.isInfixOf ".bottle.1.tar.gz" a))
+                (List.filter (\a -> Text.isInfixOf singleInfix a) bottles))
+      Monad.when (Eq.eq (List.length targets) 0)
+        (Exit.die (Text.concat ["preflight-C: no single-dash versioned bottles on ", tag]))
+      Monad.mapM_ (\a -> do
+        osTag <- Main.osTagOfVersioned version a
+        expected <- Main.formulaSha formula osTag
+        Main.verifyAssetSha "preflight-C(unrepaired)" tag a expected
+        broken <- Main.versionedBottleHasUnversionedToken tag version a
+        Monad.when (Bool.not broken)
+          (Exit.die (Text.concat
+            ["preflight-C: ", a, " matches the broken sha but lacks the unversioned token"]))) targets
 
 -- =========================================================================
 -- Op A: byte-preserving rename of one double-dash asset to single-dash.
@@ -493,14 +560,101 @@ regenVersioned = \tag -> \version -> \assetName -> do
     (Process.proc "rm" ["-rf", workdir])
   IO.pure (osTag, sha)
 
+-- Repair ONE already-published single-dash versioned bottle (Op C). Unlike
+-- regenVersioned there is NO unversioned source to rebuild from: this bottle is
+-- ALREADY correctly structured -- top dir idris2-pack@<v>/<v>, receipt already
+-- named idris2-pack@<v>.rb -- so we do NOT rename the dir or the receipt. ONLY the
+-- relocation token inside the two wrappers is wrong: it bakes the unversioned
+-- cellar path .../idris2-pack/<v> instead of .../idris2-pack@<v>/<v>. We download
+-- the existing single-dash asset, repoint that token in bin/pack AND the idris2
+-- wrapper IN PLACE, deterministically repack, and publish under the `.1` REBUILD
+-- name (rebuildNameOf assetName) -- the broken single-dash bottle stays live and
+-- consistent with the committed (broken) sha until the formula flip, so there is
+-- no checksum-mismatch window. Content-addressed + idempotent: if the downloaded
+-- bottle no longer carries the unversioned token it is already correct -> repack
+-- it unchanged under the .1 name (so brew's rebuild URL resolves) and re-sha;
+-- mutate the token nothing. Returns (osTag, newSha) for the .1 asset.
+repairVersioned = \tag -> \version -> \assetName -> do
+  let workdir = "/tmp/bottle-repair"
+  Main.runChecked "mkdir"
+    (Process.proc "mkdir" ["-p", workdir])
+  osTag <- Main.osTagOfVersioned version assetName
+  let rebuildName = Main.rebuildNameOf assetName
+
+  -- The ONLY source is the published single-dash versioned bottle itself
+  -- (--clobber so a resumed run re-fetches cleanly).
+  assetPath <- Main.fetchAsset tag assetName workdir
+  -- Preserve modes; never -h (would dereference the chez symlink).
+  Main.runChecked "tar extract"
+    (Process.proc "tar" ["-x", "-p", "-f", assetPath, "-C", workdir])
+
+  -- Already correctly structured under idris2-pack@<v>/<v>; readFile fails loud
+  -- if that layout assumption is ever false (catches a mis-shaped bottle).
+  let topDir = Text.concat [workdir, "/idris2-pack@", version]
+  let packFile = Text.concat [topDir, "/", version, "/bin/pack"]
+  let idrisWrapper = Text.concat [topDir, "/", version, "/libexec/idris2-toolchain/bin/idris2"]
+
+  let oldToken = Text.concat ["@@HOMEBREW_CELLAR@@/idris2-pack/", version]
+  let newToken = Text.concat ["@@HOMEBREW_CELLAR@@/idris2-pack@", version, "/", version]
+
+  contents <- Text.readFile packFile
+  if Bool.not (Text.isInfixOf oldToken contents)
+    then do
+      -- Already repaired (a prior run repointed it). Repack the (already-correct)
+      -- tree under the .1 rebuild name so brew's rebuild URL resolves, re-sha,
+      -- upload; the token is left untouched.
+      Text.putStrLn (Text.concat ["  [done] ", assetName, " already carries the versioned token; publishing ", rebuildName])
+      gz <- Main.repack workdir (Text.concat ["idris2-pack@", version]) rebuildName
+      sha <- Main.shaOf gz
+      Main.runChecked "gh release upload"
+        (Process.proc "gh" ["release", "upload", tag, gz, "--clobber"])
+      Main.verifyAssetSha "postverify-C(rebuild)" tag rebuildName sha
+      Main.runChecked "cleanup"
+        (Process.proc "rm" ["-rf", workdir])
+      IO.pure (osTag, sha)
+    else do
+      Text.putStrLn (Text.concat ["  [repair] ", assetName, " -> ", rebuildName, " (", osTag, "): repoint LIBEXEC token"])
+      -- Both wrappers are stored read-only (tar -x -p preserved that). Make each
+      -- writable before rewriteToken's writeFile, repoint the token (rewriteToken
+      -- dies loud if absent), then restore 0755 so they stay executable in the
+      -- repacked bottle (writeFile may also mint a 0644 inode).
+      Main.runChecked "chmod +w pack" (Process.proc "chmod" ["u+w", packFile])
+      Main.rewriteToken packFile oldToken newToken
+      Main.runChecked "chmod pack" (Process.proc "chmod" ["0755", packFile])
+      Main.runChecked "chmod +w idris2" (Process.proc "chmod" ["u+w", idrisWrapper])
+      Main.rewriteToken idrisWrapper oldToken newToken
+      Main.runChecked "chmod idris2" (Process.proc "chmod" ["0755", idrisWrapper])
+
+      -- Deterministic repack to the .1 rebuild name; member is the versioned top
+      -- dir (no dir/receipt rename -- only the token changed).
+      gz <- Main.repack workdir (Text.concat ["idris2-pack@", version]) rebuildName
+      sha <- Main.shaOf gz
+      Main.runChecked "gh release upload"
+        (Process.proc "gh" ["release", "upload", tag, gz, "--clobber"])
+      -- POST-VERIFY (trust bytes, not gh metadata): the published .1 asset re-shas
+      -- to newSha AND no longer carries the unversioned token. The broken
+      -- single-dash bottle remains live untouched throughout.
+      Main.verifyAssetSha "postverify-C(rebuild)" tag rebuildName sha
+      stillUnversioned <- Main.versionedBottleHasUnversionedToken tag version rebuildName
+      Monad.when stillUnversioned
+        (Exit.die (Text.concat ["postverify-C: unversioned token still present in ", rebuildName]))
+      Text.putStrLn (Text.concat ["  -> ", rebuildName, " (sha256: ", sha, ")"])
+      Main.runChecked "cleanup"
+        (Process.proc "rm" ["-rf", workdir])
+      IO.pure (osTag, sha)
+
 -- Insert a `rebuild 1` line into the bottle do block of a formula, idempotently.
 -- Placed immediately after the root_url line (Homebrew convention: rebuild
--- before the sha256 lines). No-op if a rebuild line is already present.
-addRebuildLine = \formulaPath -> do
+-- before the sha256 lines). No-op if a rebuild line is already present. The
+-- `version` arg pins the release the root_url must point at: both the
+-- unversioned idris2-pack.rb (Op B) and the versioned idris2-pack@<v>.rb (Op C)
+-- share the same `.../download/idris2-pack-<v>` root_url shape, so one function
+-- serves both -- the only difference is which version anchors the line.
+addRebuildLine = \formulaPath -> \version -> do
   contents <- Text.readFile formulaPath
   Monad.when (Bool.not (Text.isInfixOf "rebuild 1" contents)) (do
     let rootPrefix = "    root_url \"https://github.com/Portfoligno/homebrew-idris/releases/download/idris2-pack-"
-    let withVersion = Text.concat [rootPrefix, Main.opBVersion, "\""]
+    let withVersion = Text.concat [rootPrefix, version, "\""]
     Monad.when (Bool.not (Text.isInfixOf withVersion contents))
       (Exit.die (Text.concat ["addRebuildLine: root_url line not found in ", formulaPath]))
     let replacement = Text.concat [withVersion, "\n    rebuild 1"]
@@ -534,7 +688,7 @@ opB = \version -> do
   -- 3. The single atomic, brew-visible flip: edit BOTH formula files, then commit
   --    only if the index actually differs from HEAD. SHAs are re-derived from the
   --    live uploaded assets above, so the commit can never record a stale sha.
-  Main.addRebuildLine unversionedFormula
+  Main.addRebuildLine unversionedFormula Main.opBVersion
   Monad.mapM_ (\pair -> do
     let (osTag, sha) = pair
     Main.updateFormulaSha unversionedFormula osTag sha) unvShas
@@ -565,6 +719,94 @@ opB = \version -> do
     after <- Main.assetNames tag
     Main.assertAbsent "postverify-B(orphan gone)" after a) doublesNow
 
+-- =========================================================================
+-- Op C: repair the broken LIBEXEC token in the already-published versioned
+-- bottles of every snapshot EXCEPT 2026.05.29 (rebuild .1 approach).
+-- =========================================================================
+
+-- Repair every single-dash versioned bottle on ONE snapshot release, then land
+-- that release's atomic flip in a single commit. Mirrors opB but per-release:
+-- the existing single-dash bottle is patched in place and republished as .1, the
+-- broken single-dash bottle staying live until the flip, so there is no window.
+opCRelease = \version -> do
+  let tag = Text.concat ["idris2-pack-", version]
+  let formula = Text.concat ["Formula/idris2-pack@", version, ".rb"]
+  Text.putStrLn (Text.concat ["== repair ", tag, " =="])
+
+  -- Idempotency: a landed `rebuild 1` means this release is already repaired.
+  formulaContents <- Text.readFile formula
+  if Text.isInfixOf "rebuild 1" formulaContents
+    then Text.putStrLn (Text.concat ["  [done] ", formula, " already rebuilt"])
+    else do
+      names <- Main.assetNames tag
+      let bottles = List.filter (\a -> Text.isSuffixOf ".bottle.tar.gz" a) names
+      -- Single-dash versioned bottles: carry "@<v>-<v>" but NOT "@<v>--<v>" and
+      -- not the rebuild .1 asset.
+      let singleInfix = Text.concat ["@", version, "-", version]
+      let doubleInfix = Text.concat ["@", version, "--", version]
+      let targets =
+            List.filter (\a -> Bool.not (Text.isInfixOf doubleInfix a))
+              (List.filter (\a -> Bool.not (Text.isInfixOf ".bottle.1.tar.gz" a))
+                (List.filter (\a -> Text.isInfixOf singleInfix a) bottles))
+      Monad.when (Eq.eq (List.length targets) 0)
+        (Exit.die (Text.concat ["opCRelease: no single-dash versioned bottles on ", tag]))
+
+      -- 1. Repair each arch's versioned bottle and publish it under the .1 name.
+      --    The broken single-dash assets stay live and consistent with the
+      --    committed (broken) sha until the flip.
+      verShas <- Monad.mapM (Main.repairVersioned tag version) targets
+
+      -- 2. The atomic, brew-visible flip for THIS release: add `rebuild 1` + the
+      --    .1 shas (re-derived from the live uploads), then commit only if the
+      --    index actually differs from HEAD.
+      Main.addRebuildLine formula version
+      Monad.mapM_ (\pair -> do
+        let (osTag, sha) = pair
+        Main.updateFormulaSha formula osTag sha) verShas
+
+      Main.runChecked "git add"
+        (Process.proc "git" ["add", formula])
+      indexClean <- Main.exitedZero (Process.proc "git" ["diff", "--cached", "--quiet"])
+      if indexClean
+        then Text.putStrLn (Text.concat ["  [skip] ", formula, " already up to date; nothing to commit"])
+        else do
+          Main.runChecked "git commit"
+            (Process.proc "git" ["commit", "-m",
+              Text.concat ["idris2-pack@", version, ": repair versioned bottle LIBEXEC token (rebuild 1)"]])
+          Main.runChecked "git push"
+            (Process.proc "git" ["push", "origin", "HEAD:main"])
+
+      -- 3. Cosmetic cleanup: delete the orphaned broken single-dash assets AFTER
+      --    the flip. Set-derived from the live list, so a resumed run no-ops
+      --    safely (never delete-asset on missing).
+      namesAfter <- Main.assetNames tag
+      let orphansNow = List.filter (\a -> Main.elemText a namesAfter) targets
+      Monad.mapM_ (\a -> do
+        Text.putStrLn (Text.concat ["  [delete] ", a, " (orphaned pre-rebuild single-dash)"])
+        Main.runChecked "gh release delete-asset"
+          (Process.proc "gh" ["release", "delete-asset", tag, a, "-y"])
+        after <- Main.assetNames tag
+        Main.assertAbsent "postverify-C(orphan gone)" after a) orphansNow
+
+-- Every committed versioned formula's version, minus opBVersion (already repaired
+-- by Op B). Versions derived from `git ls-files`, never a hardcoded list.
+versionsToRepair = do
+  raw <- Main.readChecked "git ls-files"
+    (Process.proc "git" ["ls-files", "--", "Formula/idris2-pack@*.rb"])
+  let paths = Main.lines raw
+  let prefix = "Formula/idris2-pack@"
+  let suffix = ".rb"
+  vers <- Monad.mapM (\p -> do
+    let afterPrefix = Text.drop (Text.length prefix) p
+    let (v, _rest) = Text.breakOn suffix afterPrefix
+    IO.pure v) paths
+  IO.pure (List.filter (\v -> Bool.not (Eq.eq v Main.opBVersion)) vers)
+
+opC = do
+  Text.putStrLn "== Op C: repair broken versioned-bottle LIBEXEC tokens (rebuild .1) =="
+  versions <- Main.versionsToRepair
+  Monad.mapM_ Main.opCRelease versions
+
 main = do
   Text.putStrLn "== Autonomous bottle migration (one-shot, no human gates) =="
 
@@ -576,11 +818,18 @@ main = do
   let tags = Main.lines tagsRaw
   Monad.mapM_ Main.opAPreflightRelease tags
   Main.opBPreflight Main.opBVersion
+  -- Op C pre-flight: every snapshot except 2026.05.29 must be in a consistent
+  -- world (un-repaired-with-broken-token, or already-rebuilt). Fail-closed.
+  repairVersions <- Main.versionsToRepair
+  Monad.mapM_ Main.opCPreflightRelease repairVersions
   Text.putStrLn "-- pre-flight PASSED: reality matches expectation, proceeding --"
 
   -- PHASE 2 -- MUTATE (only reachable because pre-flight did not die). Op A
-  -- (byte-preserving renames) first, then Op B (patch + regenerate 2026.05.29).
+  -- (byte-preserving renames) first, then Op B (patch + regenerate 2026.05.29),
+  -- then Op C (repair the broken LIBEXEC token in the other snapshots). Op C
+  -- commits per release, so a timed-out tick resumes on the next cron fire.
   Main.opA
   Main.opB Main.opBVersion
+  Main.opC
 
   Text.putStrLn "Migration complete; all post-verifications passed."
