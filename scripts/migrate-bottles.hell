@@ -913,45 +913,58 @@ osTagForRunner = do
 -- (Core.Directory.mbPathToNS) and rejects a source not under CWD -- the exact
 -- trick the formula's `cp ... buildpath/"pack-init.idr"` uses.
 --
--- The bundled idris2 launcher (.idris2-wrapped, the stock Idris2 `startChez`)
--- execs idris2_app/idris2.so DIRECTLY and relies on that boot file's `#!` line
--- to find chez. In a raw (un-poured) extraction that line is still the tokenized
--- @@HOMEBREW_PREFIX@@/opt/chezscheme/bin/chez placeholder, which execve resolves
--- BEFORE any env is read -> ENOENT -> "bad interpreter" (exit 126). So we bypass
--- both wrappers and invoke the runner's real chez DIRECTLY on the boot file:
--- `chez --program idris2.so ...` -- chez's --program ignores the leading `#!`
--- line, so the dead placeholder is irrelevant, and the boot file is READ but
--- never written -> the extracted toolchain stays byte-for-byte tokenized and is
--- safe to repack as the .2 asset. No `--` before -o: chez's `--program FILE arg…`
--- ends chez option parsing at FILE, handing everything after straight to idris2.
+-- COPY-RELOCATE. The bundled idris2 runs as `.idris2-wrapped` (the path-free
+-- startChez launcher) -> exec idris2_app/idris2.so, whose first line is the
+-- shebang `#!@@HOMEBREW_PREFIX@@/opt/chezscheme/bin/chez --program`. On a raw
+-- (un-poured) extraction the placeholder is unresolved and breaks BOTH launch
+-- paths: kernel exec -> ENOENT "bad interpreter" (126); a direct
+-- `chez --program idris2.so` -> Chez's reader parses `#!@` as an invalid datum
+-- (255, the CURRENT failure). So we make the toolchain GENUINELY runnable by
+-- rewriting that one interpreter token -- but the repacked .2 toolchain MUST stay
+-- byte-identical and @@HOMEBREW-tokenized, so the PRISTINE tree is never touched:
+-- `cp -R` the toolchain to a THROWAWAY scratch dir, relocate the COPY's idris2.so
+-- shebang to the runner's real chez (the exact inverse of bootShebangFixup:
+-- chezPlaceholderPath -> chezExe, a path that exists via `depends_on chezscheme`
+-- + the allowed `brew install chezscheme`), compile with the copy, discard it.
 --
--- typed-process setEnv REPLACES the child env, so we must explicitly replicate
--- every var the path-free launcher would have derived from $DIR -- in particular
--- DYLD_LIBRARY_PATH (essential on arm64 macOS so the boot loads
--- libidris2_support.dylib), plus LD_LIBRARY_PATH/IDRIS2_INC_SRC and the
--- IDRIS2_PREFIX the outer bin/idris2 wrapper supplied. CHEZ is also set: idris2's
--- own findChez consults it when it shells out to compile the boot.
+-- We invoke the COPY's path-free `.idris2-wrapped`: it derives $DIR and exports
+-- {LD,DYLD}_LIBRARY_PATH + IDRIS2_INC_SRC itself, so childEnv needs only HOME,
+-- CHEZ (idris2's findChez bakes it into the OUTPUT pack-init.so, which
+-- bootShebangFixup later re-tokenizes), PATH (chez + scratch bin + system), and
+-- IDRIS2_PREFIX = the scratch toolchain (prelude/base lookup). The scratch copy
+-- is distinct from /tmp/bottle-precompile (pristine) and /tmp/packinit-build
+-- (sandbox); it is pre-cleaned and torn down so it never reaches the .2 repack.
 compilePackInit = \toolchainDir -> \chezExe -> \chezBinDir -> \sandbox -> do
+  -- 1. Throwaway copy of the toolchain (pristine tree is a read-only cp source).
+  let scratchToolchain = "/tmp/idris2-toolchain-reloc"
+  Main.runChecked "pre-clean reloc copy" (Process.proc "rm" ["-rf", scratchToolchain])
+  Main.runChecked "copy toolchain" (Process.proc "cp" ["-R", toolchainDir, scratchToolchain])
+  -- 2. Relocate the COPY's idris2.so chez `#!` placeholder -> real chez (inverse
+  --    of bootShebangFixup; rewriteToken dies loud if the placeholder is absent).
+  --    The .so extracts read-only 0555; chmod +w before, restore exec after.
+  let bootSo = Text.concat [scratchToolchain, "/bin/idris2_app/idris2.so"]
+  Main.runChecked "chmod +w idris2.so" (Process.proc "chmod" ["u+w", bootSo])
+  Main.rewriteToken bootSo Main.chezPlaceholderPath chezExe
+  Main.runChecked "chmod idris2.so" (Process.proc "chmod" ["0755", bootSo])
+  -- 3. Compile with the relocated copy's path-free launcher (it sets the lib-path
+  --    env itself; source copied into sandbox so its path is relative to CWD).
   Main.runChecked "mkdir sandbox" (Process.proc "mkdir" ["-p", sandbox])
   Main.runChecked "copy pack-init.idr"
     (Process.proc "cp" ["scripts/pack-init.idr", Text.concat [sandbox, "/pack-init.idr"]])
   homeDir <- Environment.getEnv "HOME"
-  let appDir = Text.concat [toolchainDir, "/bin/idris2_app"]
-  let bootSo = Text.concat [appDir, "/idris2.so"]
   let childEnv =
         [ ("HOME", homeDir)
         , ("CHEZ", chezExe)
-        , ("PATH", Text.concat [chezBinDir, ":", toolchainDir, "/bin:/usr/bin:/bin:/usr/sbin:/sbin"])
-        , ("IDRIS2_PREFIX", toolchainDir)
-        , ("LD_LIBRARY_PATH", appDir)
-        , ("DYLD_LIBRARY_PATH", appDir)
-        , ("IDRIS2_INC_SRC", appDir)
+        , ("PATH", Text.concat [chezBinDir, ":", scratchToolchain, "/bin:/usr/bin:/bin:/usr/sbin:/sbin"])
+        , ("IDRIS2_PREFIX", scratchToolchain)
         ]
-  Main.runChecked "idris2 compile pack-init"
+  Main.runChecked "idris2 compile pack-init (reloc copy)"
     (Process.setWorkingDir sandbox
       (Process.setEnv childEnv
-        (Process.proc chezExe
-          ["--program", bootSo, "-o", "pack-init", "pack-init.idr"])))
+        (Process.proc (Text.concat [scratchToolchain, "/bin/.idris2-wrapped"])
+          ["-o", "pack-init", "pack-init.idr"])))
+  -- 4. Discard the relocated copy; build output lives under the sandbox.
+  Main.runChecked "cleanup reloc copy" (Process.proc "rm" ["-rf", scratchToolchain])
   IO.pure (Text.concat [sandbox, "/build/exec"])
 
 -- X3 boot-shebang fixup: rewrite the literal runner chez path in the compiled
@@ -997,12 +1010,16 @@ bottleHasCompiledPackInit = \tag -> \version -> \assetName -> do
   hasBin <- Main.exitedZero (Process.proc "test" ["-f", Text.concat [libexec, "/pack-init"]])
   contents <- Text.readFile (Text.concat [wd, "/idris2-pack/", version, "/bin/pack"])
   boot <- Text.readFile (Text.concat [libexec, "/pack-init_app/pack-init.so"])
-  -- Fail closed: the bundled idris2 toolchain MUST remain tokenized. A fixed-string
-  -- grep -q (no regex; never loads the multi-MB .so into Hell as Text) asserts the
-  -- repacked compiler boot file still carries its @@HOMEBREW token; if a future
-  -- regression de-tokenized it, the Exit.die publish-gate at the call site fires.
+  -- Fail closed: the bundled idris2 toolchain MUST remain tokenized. Assert the
+  -- EXACT line-1 chez shebang token survives, not just any @@HOMEBREW byte
+  -- sequence: a shebang-only de-tokenization (the copy-relocate failure mode)
+  -- replaces "#!@@HOMEBREW_PREFIX@@/opt/chezscheme/bin/chez" with a real path, and
+  -- a bare-"@@HOMEBREW" grep could still match an unrelated embedded token and
+  -- FALSE-PASS. The "#!"-prefixed form occurs only on line 1, so this is precise.
+  -- Fixed-string grep -q (no regex; never loads the multi-MB .so into Hell as Text).
   let toolchainSo = Text.concat [libexec, "/idris2-toolchain/bin/idris2_app/idris2.so"]
-  tokenized <- Main.exitedZero (Process.proc "grep" ["-F", "-q", "@@HOMEBREW", toolchainSo])
+  let shebangTok = Text.concat ["#!", Main.chezPlaceholderPath]
+  tokenized <- Main.exitedZero (Process.proc "grep" ["-F", "-q", shebangTok, toolchainSo])
   Main.runChecked "cleanup" (Process.proc "rm" ["-rf", wd])
   let hasMarker = Text.isInfixOf Main.compiledMarker contents
   let noCdExec = Bool.not (Text.isInfixOf Main.cdExecForm contents)
@@ -1043,6 +1060,14 @@ repairUnversionedToRebuild2 = \tag -> \version -> \chezPrefix -> \oneName -> do
       let chezBinDir = Text.concat [chezPrefix, "/bin"]
       let chezExe = Text.concat [chezBinDir, "/chez"]
 
+      -- Byte-identity guard (constraint: the .2 toolchain stays tokenized): capture
+      -- the pristine compiler boot file's sha right after extraction; assert it is
+      -- unchanged just before repack. The copy-relocate compile de-tokenizes only a
+      -- THROWAWAY scratch copy, so this MUST hold; if any step ever wrote the
+      -- pristine idris2.so its sha changes and we abort BEFORE repack/upload.
+      let toolchainSo = Text.concat [toolchainDir, "/bin/idris2_app/idris2.so"]
+      shaTcBefore <- Main.shaOf toolchainSo
+
       contents <- Text.readFile packPath
       hasBin <- Main.exitedZero (Process.proc "test" ["-f", Text.concat [libexec, "/pack-init"]])
       -- Three accepted shapes; the impossible one dies loud.
@@ -1066,6 +1091,11 @@ repairUnversionedToRebuild2 = \tag -> \version -> \chezPrefix -> \oneName -> do
           Main.runChecked "chmod pack" (Process.proc "chmod" ["0755", packPath])
           Main.runChecked "rm stale pack-init.idr" (Process.proc "rm" ["-f", idrPath])
 
+      -- Fail closed before repack/upload: the bundled compiler boot file MUST be
+      -- byte-identical to .1's (covers the already-forward-fixed branch too).
+      shaTcAfter <- Main.shaOf toolchainSo
+      Monad.when (Bool.not (Eq.eq shaTcBefore shaTcAfter))
+        (Exit.die (Text.concat ["opD: bundled idris2.so mutated before repack (expected byte-identical to .1): ", toolchainSo]))
       gz <- Main.repackWith "gtar" workdir (Text.concat ["idris2-pack/", version]) twoName
       sha <- Main.shaOf gz
       Main.runChecked "gh release upload" (Process.proc "gh" ["release", "upload", tag, gz, "--clobber"])
@@ -1141,7 +1171,8 @@ regenVersionedRebuild2 = \tag -> \version -> \oneName -> do
       vpath <- Main.fetchAsset tag verName vchk
       Main.runChecked "tar extract" (Process.proc "tar" ["-x", "-p", "-f", vpath, "-C", vchk])
       let verToolchainSo = Text.concat [vchk, "/idris2-pack@", version, "/", version, "/libexec/idris2-toolchain/bin/idris2_app/idris2.so"]
-      verTokenized <- Main.exitedZero (Process.proc "grep" ["-F", "-q", "@@HOMEBREW", verToolchainSo])
+      let verShebangTok = Text.concat ["#!", Main.chezPlaceholderPath]
+      verTokenized <- Main.exitedZero (Process.proc "grep" ["-F", "-q", verShebangTok, verToolchainSo])
       Main.runChecked "cleanup" (Process.proc "rm" ["-rf", vchk])
       Monad.when (Bool.not verTokenized)
         (Exit.die (Text.concat ["postverify-D(versioned tokenized): toolchain idris2.so lost its @@HOMEBREW token in ", verName]))
