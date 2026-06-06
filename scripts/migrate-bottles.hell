@@ -1,7 +1,12 @@
 #!/usr/bin/env hell
 
 -- Autonomous one-shot bottle migration for already-published releases.
--- Usage: ./scripts/migrate-bottles.hell   (NO arguments)
+-- Usage: ./scripts/migrate-bottles.hell             (Ops A/B/C, ubuntu-latest)
+--        ./scripts/migrate-bottles.hell precompile  (Op D, macOS arm64 matrix)
+--
+-- The `precompile` argument selects Op D (the macOS in-bottle precompile pass);
+-- with no argument the script runs the ubuntu Ops A/B/C exactly as before. The
+-- two passes share every helper below; the arg only switches the entrypoint.
 --
 -- There are no human gates: no mode, no scope, no typed confirm. The single
 -- trigger (a workflow_dispatch click or a schedule tick) initiates a fully
@@ -89,15 +94,19 @@ rewriteToken = \path -> \oldToken -> \newToken -> do
   Text.writeFile path (Text.replace oldToken newToken contents)
 
 -- Deterministic repack of a single top-level member under `workdir` to
--- `<workdir>/<assetName>`. GNU tar reproducible recipe + separate `gzip -n`
--- so re-runs converge to identical bytes -> identical SHA. No pipe/redirect:
--- gzip -n -f rewrites the .tar in place to .tar.gz.
-repack = \workdir -> \member -> \assetName -> do
+-- `<workdir>/<assetName>`, using the named tar binary. GNU tar reproducible
+-- recipe + separate `gzip -n` so re-runs converge to identical bytes ->
+-- identical SHA. No pipe/redirect: gzip -n -f rewrites the .tar in place to
+-- .tar.gz. The recipe flags are all GNU features; macOS's default `tar` is
+-- bsdtar and rejects them, so Op D (macOS) passes `tarExe = "gtar"` (GNU tar
+-- 1.35, from `brew install gnu-tar`) -- the recipe runs verbatim, only the
+-- process name differs. Ops A/B/C run on GNU `tar` via the `repack` wrapper.
+repackWith = \tarExe -> \workdir -> \member -> \assetName -> do
   let gzPath = Text.concat [workdir, "/", assetName]
   let tarPath = Text.replace ".tar.gz" ".tar" gzPath
   Main.runChecked "tar repackage"
     (Process.setEnv [("LC_ALL", "C")]
-      (Process.proc "tar"
+      (Process.proc tarExe
         [ "--create", "--numeric-owner", "--sort=name", "--mtime=@1"
         , "--owner=0", "--group=0", "--format=pax"
         , "--pax-option=globexthdr.name=/GlobalHead.%n,exthdr.name=%d/PaxHeaders/%f,delete=atime,delete=ctime"
@@ -106,6 +115,10 @@ repack = \workdir -> \member -> \assetName -> do
   Main.runChecked "gzip repackage"
     (Process.proc "gzip" ["-n", "-f", tarPath])
   IO.pure gzPath
+
+-- GNU `tar` repack (Ops A/B/C on ubuntu-latest). Thin wrapper over repackWith.
+repack = \workdir -> \member -> \assetName ->
+  Main.repackWith "tar" workdir member assetName
 
 -- shasum -a 256 of a file -> the hex digest (first whitespace-delimited field).
 shaOf = \path -> do
@@ -807,7 +820,442 @@ opC = do
   versions <- Main.versionsToRepair
   Monad.mapM_ Main.opCRelease versions
 
-main = do
+-- =========================================================================
+-- Op D: macOS in-bottle precompile of pack-init -> rebuild .2.
+--
+-- Op B left the published .1 bottle carrying a RUNTIME-recompile wrapper that
+-- drives a stale pack-init.idr. Op D converts each .1 bottle to the forward-fix
+-- shape -- a PRECOMPILED native pack-init built from the fixed
+-- scripts/pack-init.idr by the bottle's OWN bundled idris2 -- and ships it as
+-- rebuild .2 (unversioned) plus a regenerated versioned rebuild .2 snapshot.
+--
+-- This MUST run on macOS arm64: the emitted binary is a Chez-native arm64
+-- artifact produced by the bundled idris2; it cannot be built on the ubuntu
+-- A/B/C runner. The pass is split across two CI jobs:
+--   * `precompile` (macos-14 -> arm64_sonoma, macos-15 -> arm64_sequoia matrix):
+--     build + upload this arch's .2 assets ONLY. No formula commit (two matrix
+--     legs committing idris2-pack.rb would race / non-fast-forward).
+--   * `flip` (ubuntu): re-sha BOTH live .2 assets (trust bytes), bump the
+--     unversioned formula rebuild 1->2 + both SHAs, add rebuild 2 to the
+--     versioned formula + both SHAs, ONE atomic commit (only if the index
+--     differs), then cosmetic cleanup of the orphaned .1 assets.
+--
+-- The repair (Strategy 1): download the .1 bottle, precompile in place with the
+-- bundled toolchain, graft build/exec/{pack-init,pack-init_app} into libexec,
+-- rewrite bin/pack from the cd-`--exec` form to the precompiled-binary form,
+-- drop the stale pack-init.idr, re-tokenize the boot-file shebang's literal
+-- chez path to @@HOMEBREW_PREFIX@@ (the brew-bottle tokenizer our raw repack
+-- bypasses), gtar-repack to .bottle.2.tar.gz, re-sha, upload, post-verify.
+-- =========================================================================
+
+-- The version Op D repairs (the post-cutover release).
+opDVersion = "2026.05.29"
+
+-- Op B's cd-into-LIBEXEC runtime recompile, baked verbatim into the .1 bottle's
+-- bin/pack by patchUnversioned's replStr. This is what Op D removes. Kept in
+-- exact lockstep with patchUnversioned (line ~488): if that string changes, this
+-- must too, and rewriteToken will fail loud rather than silently mis-patch.
+cdExecForm = "( cd \"${LIBEXEC}\" && PACK_INIT_LIBEXEC=\"${LIBEXEC}\" \"${LIBEXEC}/idris2-toolchain/bin/idris2\" --build-dir \"${PACK_STATE}/.pack-init-build\" --exec main pack-init.idr ) 2>&1 || true"
+
+-- The forward-fix invocation of the precompiled native binary (identical to the
+-- formula's pack_body line 213).
+compiledForm = "PACK_INIT_LIBEXEC=\"${LIBEXEC}\" \"${LIBEXEC}/pack-init\" 2>&1 || true"
+
+-- False-positive-free presence test for the compiled form. The cd form contains
+-- `main pack-init.idr` and `${LIBEXEC}/idris2-toolchain/bin/idris2` but NOT the
+-- substring `"${LIBEXEC}/pack-init" 2>&1`, so this distinguishes the two shapes.
+compiledMarker = "\"${LIBEXEC}/pack-init\" 2>&1"
+
+-- The brew-bottle-relocated chez shebang the forward-fix boot file carries. Op D
+-- rewrites the runner's literal chez path TO this placeholder form, byte-matching
+-- what `brew bottle` would have emitted (research r3 step 2).
+chezPlaceholderPath = "@@HOMEBREW_PREFIX@@/opt/chezscheme/bin/chez"
+
+-- idris2-pack-<v>.<arch>.bottle.1.tar.gz -> ....bottle.2.tar.gz
+rebuild2NameOf = \oneName -> Text.replace ".bottle.1.tar.gz" ".bottle.2.tar.gz" oneName
+
+-- arch tag from any unversioned REBUILD asset (.1 or .2). osTagOfUnversioned
+-- breaks on ".bottle.tar.gz" and would NOT match a rebuild name; break on
+-- ".bottle." so both .1 and .2 yield the bare arch.
+osTagOfRebuild = \version -> \assetName -> do
+  let stripped = Text.replace (Text.concat ["idris2-pack-", version, "."]) "" assetName
+  let (osTag, _suffix) = Text.breakOn ".bottle." stripped
+  IO.pure osTag
+
+-- The arch tag (Homebrew os/arch token) of the CURRENT macOS runner. Derived
+-- from `uname -m` + the macOS major version (14 -> sonoma, 15 -> sequoia), so a
+-- matrix leg processes ONLY its own arch's bottle. Dies on an unrecognized
+-- major (fail-closed: never silently mis-tag a future runner image).
+osTagForRunner = do
+  arch <- Main.readChecked "uname -m" (Process.proc "uname" ["-m"])
+  prod <- Main.readChecked "sw_vers" (Process.proc "sw_vers" ["-productVersion"])
+  let machine = Text.strip arch
+  let archTag = if Eq.eq machine "arm64" then "arm64" else machine
+  let (major, _rest) = Text.breakOn "." (Text.strip prod)
+  name <- if Eq.eq major "14"
+    then IO.pure "sonoma"
+    else if Eq.eq major "15"
+      then IO.pure "sequoia"
+      else Exit.die (Text.concat ["osTagForRunner: unrecognized macOS major version ", major])
+  IO.pure (Text.concat [archTag, "_", name])
+
+-- Precompile the fixed scripts/pack-init.idr with the bottle's bundled idris2,
+-- emitting build/exec/{pack-init,pack-init_app} under `sandbox`. Returns the
+-- build/exec dir. The source is copied INTO the sandbox so its path is RELATIVE
+-- to the process CWD: Idris derives the module namespace by stripping CWD
+-- (Core.Directory.mbPathToNS) and rejects a source not under CWD -- the exact
+-- trick the formula's `cp ... buildpath/"pack-init.idr"` uses.
+-- typed-process setEnv REPLACES the child env, so an explicit minimal env is
+-- built. .idris2-wrapped (the real launcher) is invoked DIRECTLY, bypassing the
+-- bottle's bin/idris2 wrapper whose @@HOMEBREW_*@@ exec target does not resolve
+-- in an un-relocated extraction.
+compilePackInit = \toolchainDir -> \chezExe -> \chezBinDir -> \sandbox -> do
+  Main.runChecked "mkdir sandbox" (Process.proc "mkdir" ["-p", sandbox])
+  Main.runChecked "copy pack-init.idr"
+    (Process.proc "cp" ["scripts/pack-init.idr", Text.concat [sandbox, "/pack-init.idr"]])
+  homeDir <- Environment.getEnv "HOME"
+  let childEnv =
+        [ ("HOME", homeDir)
+        , ("CHEZ", chezExe)
+        , ("PATH", Text.concat [chezBinDir, ":", toolchainDir, "/bin:/usr/bin:/bin:/usr/sbin:/sbin"])
+        , ("IDRIS2_PREFIX", toolchainDir)
+        ]
+  Main.runChecked "idris2 compile pack-init"
+    (Process.setWorkingDir sandbox
+      (Process.setEnv childEnv
+        (Process.proc (Text.concat [toolchainDir, "/bin/.idris2-wrapped"])
+          ["-o", "pack-init", "pack-init.idr"])))
+  IO.pure (Text.concat [sandbox, "/build/exec"])
+
+-- X3 boot-shebang fixup: rewrite the literal runner chez path in the compiled
+-- boot file's `#!<prefix>/opt/chezscheme/bin/chez --program` shebang to the
+-- @@HOMEBREW_PREFIX@@ placeholder, mirroring `brew bottle`'s
+-- replace_locations_with_placeholders (which our raw gtar repack bypasses).
+-- Without this the binary hardcodes the CI runner's chez path and only
+-- ACCIDENTALLY works on a stock /opt/homebrew prefix. Applied to
+-- pack-init_app/pack-init.so (and defensively .ss if present). The launcher
+-- (build/exec/pack-init) is path-free by construction (research r3) and is left
+-- untouched; we additionally assert it carries no chez path.
+bootShebangFixup = \libexec -> \chezPrefix -> do
+  let realChezPath = Text.concat [chezPrefix, "/bin/chez"]
+  let appDir = Text.concat [libexec, "/pack-init_app"]
+  let soPath = Text.concat [appDir, "/pack-init.so"]
+  let ssPath = Text.concat [appDir, "/pack-init.ss"]
+  -- The .so is the compiled boot file and MUST exist; rewriteToken dies loud if
+  -- the literal chez path is absent (e.g. findChez resolved something else).
+  Main.runChecked "chmod +w pack-init.so" (Process.proc "chmod" ["u+w", soPath])
+  Main.rewriteToken soPath realChezPath Main.chezPlaceholderPath
+  Main.runChecked "chmod pack-init.so" (Process.proc "chmod" ["0755", soPath])
+  -- .ss is only present for the --exec path; tokenize it defensively if it exists.
+  hasSs <- Main.exitedZero (Process.proc "test" ["-f", ssPath])
+  Monad.when hasSs (do
+    Main.runChecked "chmod +w pack-init.ss" (Process.proc "chmod" ["u+w", ssPath])
+    Main.rewriteToken ssPath realChezPath Main.chezPlaceholderPath
+    Main.runChecked "chmod pack-init.ss" (Process.proc "chmod" ["0755", ssPath]))
+  -- The launcher must be path-free: assert it does NOT carry the runner chez
+  -- path (catches an idris2/codegen change that would bake a path into it).
+  launcher <- Text.readFile (Text.concat [libexec, "/pack-init"])
+  Monad.when (Text.isInfixOf realChezPath launcher)
+    (Exit.die (Text.concat ["bootShebangFixup: launcher unexpectedly bakes a chez path: ", realChezPath]))
+
+-- Post-verify predicate for a published .2 bottle: native binary present AND the
+-- forward-fix wrapper marker AND the cd-form gone AND the boot shebang carries
+-- the placeholder (not a literal runner path). Read-only; cleans up.
+bottleHasCompiledPackInit = \tag -> \version -> \assetName -> do
+  let wd = "/tmp/bottle-d-inspect"
+  Main.runChecked "pre-clean" (Process.proc "rm" ["-rf", wd])
+  path <- Main.fetchAsset tag assetName wd
+  Main.runChecked "tar extract" (Process.proc "tar" ["-x", "-p", "-f", path, "-C", wd])
+  let libexec = Text.concat [wd, "/idris2-pack/", version, "/libexec"]
+  hasBin <- Main.exitedZero (Process.proc "test" ["-f", Text.concat [libexec, "/pack-init"]])
+  contents <- Text.readFile (Text.concat [wd, "/idris2-pack/", version, "/bin/pack"])
+  boot <- Text.readFile (Text.concat [libexec, "/pack-init_app/pack-init.so"])
+  Main.runChecked "cleanup" (Process.proc "rm" ["-rf", wd])
+  let hasMarker = Text.isInfixOf Main.compiledMarker contents
+  let noCdExec = Bool.not (Text.isInfixOf Main.cdExecForm contents)
+  let bootOk = Text.isInfixOf Main.chezPlaceholderPath boot
+  IO.pure (if hasBin then (if hasMarker then (if noCdExec then bootOk else Bool.False) else Bool.False) else Bool.False)
+
+-- Repair ONE unversioned .1 bottle to .2 for this arch (content-addressed,
+-- idempotent). Returns (osTag, sha) for the .2 asset. If the .2 already exists it
+-- is the source of truth: re-sha the live bytes, never recompile (the compile is
+-- the only non-deterministic step). Otherwise: download .1, extract, precompile,
+-- graft binary, fixup boot shebang, rewrite wrapper, drop stale .idr, gtar-repack
+-- to .2, re-sha, upload, post-verify.
+repairUnversionedToRebuild2 = \tag -> \version -> \chezPrefix -> \oneName -> do
+  osTag <- Main.osTagOfRebuild version oneName
+  let twoName = Main.rebuild2NameOf oneName
+  names <- Main.assetNames tag
+  if Main.elemText twoName names
+    then do
+      Text.putStrLn (Text.concat ["  [done] ", twoName, " already published; re-sha live bytes"])
+      let vd = "/tmp/bottle-d-sha"
+      Main.runChecked "pre-clean" (Process.proc "rm" ["-rf", vd])
+      p <- Main.fetchAsset tag twoName vd
+      sha <- Main.shaOf p
+      Main.runChecked "cleanup" (Process.proc "rm" ["-rf", vd])
+      IO.pure (osTag, sha)
+    else do
+      Text.putStrLn (Text.concat ["  [precompile] ", oneName, " -> ", twoName, " (", osTag, ")"])
+      let workdir = "/tmp/bottle-precompile"
+      Main.runChecked "pre-clean" (Process.proc "rm" ["-rf", workdir])
+      assetPath <- Main.fetchAsset tag oneName workdir
+      Main.runChecked "tar extract" (Process.proc "tar" ["-x", "-p", "-f", assetPath, "-C", workdir])
+
+      let kegRoot = Text.concat [workdir, "/idris2-pack/", version]
+      let libexec = Text.concat [kegRoot, "/libexec"]
+      let packPath = Text.concat [kegRoot, "/bin/pack"]
+      let toolchainDir = Text.concat [libexec, "/idris2-toolchain"]
+      let idrPath = Text.concat [libexec, "/pack-init.idr"]
+      let chezBinDir = Text.concat [chezPrefix, "/bin"]
+      let chezExe = Text.concat [chezBinDir, "/chez"]
+
+      contents <- Text.readFile packPath
+      hasBin <- Main.exitedZero (Process.proc "test" ["-f", Text.concat [libexec, "/pack-init"]])
+      -- Three accepted shapes; the impossible one dies loud.
+      if Bool.not (Text.isInfixOf Main.cdExecForm contents)
+        then
+          -- Already forward-fixed: must already carry the binary + marker.
+          Monad.when (Bool.not (if hasBin then Text.isInfixOf Main.compiledMarker contents else Bool.False))
+            (Exit.die (Text.concat ["opD: ", oneName, " lacks cd-exec form AND lacks compiled pack-init -- unexpected shape"]))
+        else do
+          execDir <- Main.compilePackInit toolchainDir chezExe chezBinDir "/tmp/packinit-build"
+          Main.runChecked "install pack-init"
+            (Process.proc "cp" [Text.concat [execDir, "/pack-init"], Text.concat [libexec, "/pack-init"]])
+          Main.runChecked "install pack-init_app"
+            (Process.proc "cp" ["-R", Text.concat [execDir, "/pack-init_app"], Text.concat [libexec, "/pack-init_app"]])
+          Main.runChecked "chmod pack-init" (Process.proc "chmod" ["0755", Text.concat [libexec, "/pack-init"]])
+          -- X3: re-tokenize the boot shebang's literal chez path -> placeholder.
+          Main.bootShebangFixup libexec chezPrefix
+          -- Rewrite the wrapper from the cd-exec form to the precompiled form.
+          Main.runChecked "chmod +w pack" (Process.proc "chmod" ["u+w", packPath])
+          Main.rewriteToken packPath Main.cdExecForm Main.compiledForm
+          Main.runChecked "chmod pack" (Process.proc "chmod" ["0755", packPath])
+          Main.runChecked "rm stale pack-init.idr" (Process.proc "rm" ["-f", idrPath])
+
+      gz <- Main.repackWith "gtar" workdir (Text.concat ["idris2-pack/", version]) twoName
+      sha <- Main.shaOf gz
+      Main.runChecked "gh release upload" (Process.proc "gh" ["release", "upload", tag, gz, "--clobber"])
+      Main.verifyAssetSha "postverify-D(rebuild2 sha)" tag twoName sha
+      good <- Main.bottleHasCompiledPackInit tag version twoName
+      Monad.when (Bool.not good)
+        (Exit.die (Text.concat ["postverify-D: ", twoName, " missing compiled pack-init / wrapper / boot placeholder"]))
+      Main.runChecked "cleanup" (Process.proc "rm" ["-rf", workdir])
+      IO.pure (osTag, sha)
+
+-- Regenerate the versioned rebuild .2 from the patched unversioned .2, symmetric
+-- with regenVersioned (Op B) but sourcing the .2 and emitting the versioned .2.
+-- Renames the top dir, renames the receipt, repoints the relocation token in
+-- bin/pack AND the idris2 wrapper, gtar-repacks, uploads, post-verifies. The
+-- precompiled libexec/pack-init + boot placeholder ride through unchanged.
+-- Content-addressed: if the versioned .2 already exists, re-sha live bytes.
+regenVersionedRebuild2 = \tag -> \version -> \oneName -> do
+  osTag <- Main.osTagOfRebuild version oneName
+  let twoName = Main.rebuild2NameOf oneName
+  -- Versioned .2 asset name: idris2-pack-<v>.<arch>.bottle.2.tar.gz ->
+  -- idris2-pack@<v>-<v>.<arch>.bottle.2.tar.gz  (mirror of Op B's mapping).
+  let verName = Text.replace "idris2-pack-" (Text.concat ["idris2-pack@", version, "-"]) twoName
+  names <- Main.assetNames tag
+  if Main.elemText verName names
+    then do
+      Text.putStrLn (Text.concat ["  [done] ", verName, " already published; re-sha live bytes"])
+      let vd = "/tmp/bottle-d-ver-sha"
+      Main.runChecked "pre-clean" (Process.proc "rm" ["-rf", vd])
+      p <- Main.fetchAsset tag verName vd
+      sha <- Main.shaOf p
+      Main.runChecked "cleanup" (Process.proc "rm" ["-rf", vd])
+      IO.pure (osTag, sha)
+    else do
+      Text.putStrLn (Text.concat ["  [regen] ", verName, " (", osTag, ")"])
+      let workdir = "/tmp/bottle-d-regen"
+      Main.runChecked "pre-clean" (Process.proc "rm" ["-rf", workdir])
+      assetPath <- Main.fetchAsset tag twoName workdir
+      Main.runChecked "tar extract" (Process.proc "tar" ["-x", "-p", "-f", assetPath, "-C", workdir])
+
+      let srcDir = Text.concat [workdir, "/idris2-pack"]
+      let dstDir = Text.concat [workdir, "/idris2-pack@", version]
+      Main.runChecked "mv directory" (Process.proc "mv" [srcDir, dstDir])
+
+      let brewDir = Text.concat [dstDir, "/", version, "/.brew"]
+      Main.runChecked "rename receipt"
+        (Process.proc "mv"
+          [Text.concat [brewDir, "/idris2-pack.rb"], Text.concat [brewDir, "/idris2-pack@", version, ".rb"]])
+
+      let oldToken = Text.concat ["@@HOMEBREW_CELLAR@@/idris2-pack/", version]
+      let newToken = Text.concat ["@@HOMEBREW_CELLAR@@/idris2-pack@", version, "/", version]
+      let packFile = Text.concat [dstDir, "/", version, "/bin/pack"]
+      let idrisWrapper = Text.concat [dstDir, "/", version, "/libexec/idris2-toolchain/bin/idris2"]
+      Main.runChecked "chmod +w pack" (Process.proc "chmod" ["u+w", packFile])
+      Main.rewriteToken packFile oldToken newToken
+      Main.runChecked "chmod pack" (Process.proc "chmod" ["0755", packFile])
+      Main.runChecked "chmod +w idris2" (Process.proc "chmod" ["u+w", idrisWrapper])
+      Main.rewriteToken idrisWrapper oldToken newToken
+      Main.runChecked "chmod idris2" (Process.proc "chmod" ["0755", idrisWrapper])
+
+      gz <- Main.repackWith "gtar" workdir (Text.concat ["idris2-pack@", version]) verName
+      sha <- Main.shaOf gz
+      Main.runChecked "gh release upload" (Process.proc "gh" ["release", "upload", tag, gz, "--clobber"])
+      Main.verifyAssetSha "postverify-D(versioned .2)" tag verName sha
+      namesNow <- Main.assetNames tag
+      Main.assertPresent "postverify-D(versioned present)" namesNow verName
+      Main.runChecked "cleanup" (Process.proc "rm" ["-rf", workdir])
+      IO.pure (osTag, sha)
+
+-- Guarded bump of the unversioned formula `rebuild 1` -> `rebuild 2`. Dies if the
+-- `rebuild 1` line is absent (Op B must have landed first); no-ops if already at
+-- `rebuild 2`.
+bumpRebuildTo2 = \formulaPath -> do
+  contents <- Text.readFile formulaPath
+  Monad.when (Bool.not (Text.isInfixOf "rebuild 2" contents)) (do
+    Monad.when (Bool.not (Text.isInfixOf "rebuild 1" contents))
+      (Exit.die (Text.concat ["bumpRebuildTo2: no `rebuild 1` to bump in ", formulaPath]))
+    Text.writeFile formulaPath (Text.replace "rebuild 1" "rebuild 2" contents))
+
+-- Add a `rebuild 1` line to the VERSIONED formula (idris2-pack@<v>.rb), which
+-- has no rebuild line. Reuses addRebuildLine (idempotent, dies if root_url
+-- absent). The versioned .2 carries the precompiled binary, so its bottle block
+-- becomes rebuild 1.
+addVersionedRebuildLine = \formulaPath -> \version ->
+  Main.addRebuildLine formulaPath version
+
+-- The unversioned base/rebuild bottles on the release that Op D must repair:
+-- bottles whose name has NO @<v> marker (unversioned) AND the .1 rebuild suffix.
+opDUnversionedOnes = \names -> \version -> do
+  let bottles = List.filter (\a -> Text.isSuffixOf ".bottle.1.tar.gz" a) names
+  let verMarker = Text.concat ["idris2-pack@", version]
+  IO.pure (List.filter (\a -> Bool.not (Text.isInfixOf verMarker a)) bottles)
+
+-- Op D pre-flight (macOS, per the current arch). Fail-closed: accept exactly the
+-- two consistent worlds, die on the impossible one. cdWrapperMarker presence in
+-- the live .1 bottle's bin/pack is the "still broken" signal.
+--   hasRebuild2 (formula) && bottle broken  -> IMPOSSIBLE -> die
+--   hasRebuild2 && not broken               -> already done -> skip (opD no-ops)
+--   rebuild 1 && broken                      -> un-fixed -> proceed
+--   rebuild 1 && not broken                  -> built-but-not-flipped -> proceed
+opDPreflight = \version -> do
+  let tag = Text.concat ["idris2-pack-", version]
+  let unvFormula = "Formula/idris2-pack.rb"
+  formulaContents <- Text.readFile unvFormula
+  let hasRebuild2 = Text.isInfixOf "rebuild 2" formulaContents
+  Monad.when (Bool.not (Text.isInfixOf "rebuild " formulaContents))
+    (Exit.die "preflight-D: idris2-pack.rb carries no rebuild line -- Op B has not landed")
+  osTag <- Main.osTagForRunner
+  names <- Main.assetNames tag
+  ones <- Main.opDUnversionedOnes names version
+  let mine = List.filter (\a -> Text.isInfixOf (Text.concat [".", osTag, "."]) a) ones
+  oneName <- Maybe.maybe
+    (Exit.die (Text.concat ["preflight-D: no unversioned .1 bottle for ", osTag, " on ", tag]))
+    IO.pure
+    (Maybe.listToMaybe mine)
+  let twoName = Main.rebuild2NameOf oneName
+  if Main.elemText twoName names
+    then Text.putStrLn (Text.concat ["  [preflight-D] ", twoName, " already published (resumable)"])
+    else do
+      -- The live .1 must still carry the cd-wrapper to be repaired. If the
+      -- formula already claims rebuild 2 but the .1 is still broken AND no .2
+      -- exists, that is the impossible world.
+      broken <- Main.bottleHasCdWrapper tag version oneName
+      Monad.when (if hasRebuild2 then broken else Bool.False)
+        (Exit.die (Text.concat ["preflight-D: ", unvFormula, " at rebuild 2 but ", oneName, " still ships the cd-wrapper/.idr"]))
+
+-- Does the bin/pack inside an unversioned bottle still carry the Op B cd-wrapper
+-- (the precompile precondition)? Read-only; cleans up.
+bottleHasCdWrapper = \tag -> \version -> \assetName -> do
+  let wd = "/tmp/bottle-d-cd-inspect"
+  Main.runChecked "pre-clean" (Process.proc "rm" ["-rf", wd])
+  path <- Main.fetchAsset tag assetName wd
+  Main.runChecked "tar extract" (Process.proc "tar" ["-x", "-p", "-f", path, "-C", wd])
+  contents <- Text.readFile (Text.concat [wd, "/idris2-pack/", version, "/bin/pack"])
+  Main.runChecked "cleanup" (Process.proc "rm" ["-rf", wd])
+  IO.pure (Text.isInfixOf Main.cdExecForm contents)
+
+-- Op D precompile entrypoint (one macOS matrix leg). Repairs THIS arch's
+-- unversioned .1 -> .2 and regenerates the versioned .2; uploads both. No
+-- formula commit (the downstream flip job does that once, atomically).
+opDPrecompile = \version -> do
+  Text.putStrLn "== Op D: precompile pack-init + rebuild .2 (macOS, this arch) =="
+  Main.opDPreflight version
+  let tag = Text.concat ["idris2-pack-", version]
+  osTag <- Main.osTagForRunner
+  Text.putStrLn (Text.concat ["  runner arch tag: ", osTag])
+  chezPrefixRaw <- Main.readChecked "brew --prefix chezscheme"
+    (Process.proc "brew" ["--prefix", "chezscheme"])
+  let chezPrefix = Text.strip chezPrefixRaw
+  names <- Main.assetNames tag
+  ones <- Main.opDUnversionedOnes names version
+  let mine = List.filter (\a -> Text.isInfixOf (Text.concat [".", osTag, "."]) a) ones
+  Monad.when (Eq.eq (List.length mine) 0)
+    (Exit.die (Text.concat ["opDPrecompile: no unversioned .1 bottle for ", osTag, " on ", tag]))
+  Monad.mapM_ (\oneName -> do
+    _unv <- Main.repairUnversionedToRebuild2 tag version chezPrefix oneName
+    _ver <- Main.regenVersionedRebuild2 tag version oneName
+    IO.pure ()) mine
+
+-- Op D flip entrypoint (ubuntu, downstream of the matrix). Re-shas BOTH live .2
+-- assets (trust bytes, not gh metadata), bumps idris2-pack.rb rebuild 1->2 +
+-- both SHAs, adds rebuild 1 to idris2-pack@<v>.rb + both SHAs, ONE atomic commit
+-- (only if the index differs), then deletes the orphaned .1 assets.
+opDFlip = \version -> do
+  Text.putStrLn "== Op D flip: rebuild 1 -> 2 + versioned rebuild 1 (atomic) =="
+  let tag = Text.concat ["idris2-pack-", version]
+  let unvFormula = "Formula/idris2-pack.rb"
+  let verFormula = Text.concat ["Formula/idris2-pack@", version, ".rb"]
+  names <- Main.assetNames tag
+  ones <- Main.opDUnversionedOnes names version
+  Monad.when (Eq.eq (List.length ones) 0)
+    (Exit.die "opDFlip: no unversioned .1 bottles found to flip")
+
+  -- Re-sha both arches' published .2 assets (unversioned + versioned).
+  unvShas <- Monad.mapM (\oneName -> do
+    osTag <- Main.osTagOfRebuild version oneName
+    let twoName = Main.rebuild2NameOf oneName
+    Main.assertPresent "flip-D(unv .2 present)" names twoName
+    let vd = "/tmp/flip-d-unv"
+    Main.runChecked "pre-clean" (Process.proc "rm" ["-rf", vd])
+    p <- Main.fetchAsset tag twoName vd
+    sha <- Main.shaOf p
+    Main.runChecked "cleanup" (Process.proc "rm" ["-rf", vd])
+    IO.pure (osTag, sha)) ones
+  verShas <- Monad.mapM (\oneName -> do
+    osTag <- Main.osTagOfRebuild version oneName
+    let twoName = Main.rebuild2NameOf oneName
+    let verName = Text.replace "idris2-pack-" (Text.concat ["idris2-pack@", version, "-"]) twoName
+    Main.assertPresent "flip-D(ver .2 present)" names verName
+    let vd = "/tmp/flip-d-ver"
+    Main.runChecked "pre-clean" (Process.proc "rm" ["-rf", vd])
+    p <- Main.fetchAsset tag verName vd
+    sha <- Main.shaOf p
+    Main.runChecked "cleanup" (Process.proc "rm" ["-rf", vd])
+    IO.pure (osTag, sha)) ones
+
+  Main.bumpRebuildTo2 unvFormula
+  Monad.mapM_ (\pair -> do
+    let (osTag, sha) = pair
+    Main.updateFormulaSha unvFormula osTag sha) unvShas
+  Main.addVersionedRebuildLine verFormula version
+  Monad.mapM_ (\pair -> do
+    let (osTag, sha) = pair
+    Main.updateFormulaSha verFormula osTag sha) verShas
+
+  Main.runChecked "git add" (Process.proc "git" ["add", unvFormula, verFormula])
+  indexClean <- Main.exitedZero (Process.proc "git" ["diff", "--cached", "--quiet"])
+  if indexClean
+    then Text.putStrLn "  [skip] formulas already up to date; nothing to commit"
+    else do
+      Main.runChecked "git commit"
+        (Process.proc "git" ["commit", "-m", "idris2-pack 2026.05.29: precompile pack-init native binary (rebuild 2 + versioned rebuild 1)"])
+      Main.runChecked "git push" (Process.proc "git" ["push", "origin", "HEAD:main"])
+
+  -- Cosmetic cleanup AFTER the flip: delete the orphaned unversioned .1 assets.
+  -- Set-derived from the live list so a resumed run no-ops safely.
+  after <- Main.assetNames tag
+  let orphans = List.filter (\a -> Main.elemText a after) ones
+  Monad.mapM_ (\a -> do
+    Text.putStrLn (Text.concat ["  [delete] ", a, " (orphaned rebuild .1)"])
+    Main.runChecked "gh release delete-asset" (Process.proc "gh" ["release", "delete-asset", tag, a, "-y"])) orphans
+
+-- The ubuntu Ops A/B/C pass (no argument). Unchanged behavior.
+runMigrate = do
   Text.putStrLn "== Autonomous bottle migration (one-shot, no human gates) =="
 
   -- PHASE 1 -- PRE-FLIGHT (read-only). Abort the whole run on any mismatch,
@@ -833,3 +1281,15 @@ main = do
   Main.opC
 
   Text.putStrLn "Migration complete; all post-verifications passed."
+
+-- Entry dispatch:
+--   (no arg)     -> Ops A/B/C on ubuntu-latest (runMigrate).
+--   `precompile` -> Op D macOS matrix leg (this arch's .2 build + upload).
+--   `flip`       -> Op D downstream flip on ubuntu (re-sha .2 + atomic commit).
+main = do
+  args <- Environment.getArgs
+  if Main.elemText "precompile" args
+    then Main.opDPrecompile Main.opDVersion
+    else if Main.elemText "flip" args
+      then Main.opDFlip Main.opDVersion
+      else Main.runMigrate

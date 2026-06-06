@@ -7,6 +7,11 @@
 #     the single-dash versioned bottles, and lands a SINGLE atomic commit of both
 #     formula files (adding `rebuild 1`) as the only brew-visible state flip. The
 #     orphaned double-dash assets are deleted afterwards as cosmetic cleanup.
+#   Op D (precompile 2026.05.29): a macOS arm64 matrix (macos-14/macos-15) builds
+#     the genuinely precompiled native pack-init into each arch's bottle and
+#     publishes it under a NEW rebuild .2 name; a downstream ubuntu `flip` job
+#     bumps idris2-pack.rb rebuild 1 -> 2 (and adds rebuild 1 to the versioned
+#     snapshot) in one atomic commit, then deletes the orphaned .1 assets.
 #
 # Triggering: a `schedule` cron provides crash-proof liveness -- it re-runs until
 # the migration is complete, then no-ops cheaply (the `gate` job below detects
@@ -82,5 +87,75 @@ jobs:
 
       - name: Run migration
         run: ./scripts/migrate-bottles.hell
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Op D: precompile pack-init natively and publish the rebuild-2 bottle. The
+  # matrix builds ONE arch per runner (macos-14 -> arm64_sonoma, macos-15 ->
+  # arm64_sequoia); each leg compiles pack-init with the bottle's own bundled
+  # idris2 (which is macOS arm64 Mach-O, so this cannot run on the ubuntu
+  # migrate job) and uploads only its arch's .2 assets. No formula commit here:
+  # two matrix legs committing idris2-pack.rb would race / non-fast-forward; the
+  # downstream flip job lands the single atomic commit. Gated on the same
+  # should_run, and `needs: migrate` (a skipped dependency when complete) so a
+  # finished migration never spins a 10x-billed macOS runner.
+  build-macos:
+    needs: [gate, migrate]
+    if: needs.gate.outputs.should_run == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-14, macos-15]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout tap
+        uses: actions/checkout@v6
+
+      # chezscheme runs the bundled idris2; gnu-tar (gtar) is the deterministic
+      # repacker (macOS default tar is bsdtar and rejects the GNU recipe flags).
+      # One `brew install` invocation with two args -- a single command.
+      - name: Install chezscheme + GNU tar
+        run: brew install chezscheme gnu-tar
+
+      - name: Setup Hell
+        uses: ./.github/actions/setup-hell
+
+      # Single command. The Hell script: fail-closed per-arch pre-flight ->
+      # download .1 -> precompile with bundled idris2 -> graft binary ->
+      # tokenize boot shebang -> rewrite wrapper -> drop stale .idr -> gtar
+      # repack to .bottle.2.tar.gz -> upload -> re-sha post-verify. Idempotent:
+      # if the .2 asset already exists it re-shas live bytes, never recompiles.
+      - name: Precompile + publish rebuild-2 bottle (this arch)
+        run: ./scripts/migrate-bottles.hell precompile
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Single atomic flip on ubuntu: re-sha BOTH live .bottle.2.tar.gz assets
+  # (trust bytes, not gh metadata), bump idris2-pack.rb rebuild 1 -> 2 + both
+  # shas, add rebuild 1 + both shas to idris2-pack@2026.05.29.rb, one commit +
+  # push, then cosmetic cleanup of the orphaned .bottle.1.tar.gz assets.
+  flip:
+    needs: [gate, build-macos]
+    if: needs.gate.outputs.should_run == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout tap
+        uses: actions/checkout@v6
+
+      - name: Setup Hell
+        uses: ./.github/actions/setup-hell
+
+      # The flip commits the bumped sha256 lines; needs a git identity.
+      - name: Set up git
+        uses: Homebrew/actions/git-user-config@main
+
+      - name: Flip idris2-pack.rb to rebuild 2
+        run: ./scripts/migrate-bottles.hell flip
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

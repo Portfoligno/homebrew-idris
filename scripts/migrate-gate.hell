@@ -8,18 +8,24 @@
 -- via `if: needs.gate.outputs.should_run == 'true'`.
 --
 -- The predicate is derived ENTIRELY from live state, never from a flag that
--- could lie. The migration is complete (should_run=false) iff BOTH:
+-- could lie. The migration is complete (should_run=false) iff ALL of:
 --
 --   (A) no asset on ANY idris2-pack-* release still carries the double-dash
 --       infix "@<v>--<v>" -- i.e. Op A finished across every release AND Op B's
 --       double-dash cleanup finished; and
---   (B) Formula/idris2-pack.rb contains a "rebuild 1" line -- i.e. Op B's single
---       atomic two-file formula flip landed (it is the only thing that adds that
---       line, so its presence proves the SHA flip happened); and
+--   (B) Formula/idris2-pack.rb contains a "rebuild " line (number-agnostic) --
+--       i.e. Op B's single atomic two-file formula flip landed (it is the only
+--       thing that first adds that line). The match is number-agnostic so it
+--       stays true after Op D bumps the line from "rebuild 1" to "rebuild 2";
+--       and
 --   (C) every Formula/idris2-pack@*.rb EXCEPT idris2-pack@2026.05.29.rb contains
 --       a "rebuild 1" line -- i.e. Op C's per-release LIBEXEC-token repair landed
 --       on all ten broken snapshots (the only thing that adds that line to a
---       versioned formula). Pure local file reads, no downloads.
+--       versioned formula). Pure local file reads, no downloads; and
+--   (D) Formula/idris2-pack.rb contains a "rebuild 2" line -- i.e. Op D's macOS
+--       precompile landed (the unversioned formula bumped 1 -> 2). This is the
+--       final clause; until it holds, the gate keeps the macOS precompile +
+--       flip jobs eligible.
 --
 -- All three clauses are cheap (one release-list sweep + a handful of local file
 -- reads), so a post-completion tick short-circuits in seconds with no bottle
@@ -96,10 +102,14 @@ main = do
     IO.pure
     (Maybe.listToMaybe args)
 
-  -- Clause B: the atomic formula flip landed (rebuild 1 present in the
-  -- unversioned formula). Reading the file is free.
+  -- Clause B: the atomic formula flip landed (a `rebuild ` line is present in
+  -- the unversioned formula). Number-agnostic so it stays true after Op D bumps
+  -- the line to `rebuild 2`. Reading the file is free.
   unvFormula <- Text.readFile "Formula/idris2-pack.rb"
-  let flipLanded = Text.isInfixOf "rebuild 1" unvFormula
+  let flipLanded = Text.isInfixOf "rebuild " unvFormula
+
+  -- Clause D: Op D's macOS precompile landed (idris2-pack.rb at `rebuild 2`).
+  let contentFixLanded = Text.isInfixOf "rebuild 2" unvFormula
 
   -- Clause A: no double-dash asset remains on any release.
   doubleRemaining <- Main.anyDoubleDashRemaining
@@ -109,14 +119,17 @@ main = do
   versionedRebuilt <- Main.allVersionedRebuilt
 
   -- Complete iff the flip landed AND no double-dash remains AND every versioned
-  -- snapshot is repaired. `Bool.and` is not in this Hell build's prelude, so
-  -- express the conjunction with nested ifs (the same idiom the migration script
-  -- uses for its gate logic).
+  -- snapshot is repaired AND the macOS precompile landed (rebuild 2). `Bool.and`
+  -- is not in this Hell build's prelude, so express the conjunction with nested
+  -- ifs (the same idiom the migration script uses for its gate logic).
   let complete =
         if flipLanded
           then
             if Bool.not doubleRemaining
-              then versionedRebuilt
+              then
+                if versionedRebuilt
+                  then contentFixLanded
+                  else Bool.False
               else Bool.False
           else Bool.False
   let shouldRun = Bool.not complete
