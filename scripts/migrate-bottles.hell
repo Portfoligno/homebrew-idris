@@ -912,26 +912,46 @@ osTagForRunner = do
 -- to the process CWD: Idris derives the module namespace by stripping CWD
 -- (Core.Directory.mbPathToNS) and rejects a source not under CWD -- the exact
 -- trick the formula's `cp ... buildpath/"pack-init.idr"` uses.
--- typed-process setEnv REPLACES the child env, so an explicit minimal env is
--- built. .idris2-wrapped (the real launcher) is invoked DIRECTLY, bypassing the
--- bottle's bin/idris2 wrapper whose @@HOMEBREW_*@@ exec target does not resolve
--- in an un-relocated extraction.
+--
+-- The bundled idris2 launcher (.idris2-wrapped, the stock Idris2 `startChez`)
+-- execs idris2_app/idris2.so DIRECTLY and relies on that boot file's `#!` line
+-- to find chez. In a raw (un-poured) extraction that line is still the tokenized
+-- @@HOMEBREW_PREFIX@@/opt/chezscheme/bin/chez placeholder, which execve resolves
+-- BEFORE any env is read -> ENOENT -> "bad interpreter" (exit 126). So we bypass
+-- both wrappers and invoke the runner's real chez DIRECTLY on the boot file:
+-- `chez --program idris2.so ...` -- chez's --program ignores the leading `#!`
+-- line, so the dead placeholder is irrelevant, and the boot file is READ but
+-- never written -> the extracted toolchain stays byte-for-byte tokenized and is
+-- safe to repack as the .2 asset. No `--` before -o: chez's `--program FILE arg…`
+-- ends chez option parsing at FILE, handing everything after straight to idris2.
+--
+-- typed-process setEnv REPLACES the child env, so we must explicitly replicate
+-- every var the path-free launcher would have derived from $DIR -- in particular
+-- DYLD_LIBRARY_PATH (essential on arm64 macOS so the boot loads
+-- libidris2_support.dylib), plus LD_LIBRARY_PATH/IDRIS2_INC_SRC and the
+-- IDRIS2_PREFIX the outer bin/idris2 wrapper supplied. CHEZ is also set: idris2's
+-- own findChez consults it when it shells out to compile the boot.
 compilePackInit = \toolchainDir -> \chezExe -> \chezBinDir -> \sandbox -> do
   Main.runChecked "mkdir sandbox" (Process.proc "mkdir" ["-p", sandbox])
   Main.runChecked "copy pack-init.idr"
     (Process.proc "cp" ["scripts/pack-init.idr", Text.concat [sandbox, "/pack-init.idr"]])
   homeDir <- Environment.getEnv "HOME"
+  let appDir = Text.concat [toolchainDir, "/bin/idris2_app"]
+  let bootSo = Text.concat [appDir, "/idris2.so"]
   let childEnv =
         [ ("HOME", homeDir)
         , ("CHEZ", chezExe)
         , ("PATH", Text.concat [chezBinDir, ":", toolchainDir, "/bin:/usr/bin:/bin:/usr/sbin:/sbin"])
         , ("IDRIS2_PREFIX", toolchainDir)
+        , ("LD_LIBRARY_PATH", appDir)
+        , ("DYLD_LIBRARY_PATH", appDir)
+        , ("IDRIS2_INC_SRC", appDir)
         ]
   Main.runChecked "idris2 compile pack-init"
     (Process.setWorkingDir sandbox
       (Process.setEnv childEnv
-        (Process.proc (Text.concat [toolchainDir, "/bin/.idris2-wrapped"])
-          ["-o", "pack-init", "pack-init.idr"])))
+        (Process.proc chezExe
+          ["--program", bootSo, "-o", "pack-init", "pack-init.idr"])))
   IO.pure (Text.concat [sandbox, "/build/exec"])
 
 -- X3 boot-shebang fixup: rewrite the literal runner chez path in the compiled
@@ -977,11 +997,17 @@ bottleHasCompiledPackInit = \tag -> \version -> \assetName -> do
   hasBin <- Main.exitedZero (Process.proc "test" ["-f", Text.concat [libexec, "/pack-init"]])
   contents <- Text.readFile (Text.concat [wd, "/idris2-pack/", version, "/bin/pack"])
   boot <- Text.readFile (Text.concat [libexec, "/pack-init_app/pack-init.so"])
+  -- Fail closed: the bundled idris2 toolchain MUST remain tokenized. A fixed-string
+  -- grep -q (no regex; never loads the multi-MB .so into Hell as Text) asserts the
+  -- repacked compiler boot file still carries its @@HOMEBREW token; if a future
+  -- regression de-tokenized it, the Exit.die publish-gate at the call site fires.
+  let toolchainSo = Text.concat [libexec, "/idris2-toolchain/bin/idris2_app/idris2.so"]
+  tokenized <- Main.exitedZero (Process.proc "grep" ["-F", "-q", "@@HOMEBREW", toolchainSo])
   Main.runChecked "cleanup" (Process.proc "rm" ["-rf", wd])
   let hasMarker = Text.isInfixOf Main.compiledMarker contents
   let noCdExec = Bool.not (Text.isInfixOf Main.cdExecForm contents)
   let bootOk = Text.isInfixOf Main.chezPlaceholderPath boot
-  IO.pure (if hasBin then (if hasMarker then (if noCdExec then bootOk else Bool.False) else Bool.False) else Bool.False)
+  IO.pure (if hasBin then (if hasMarker then (if noCdExec then (if bootOk then tokenized else Bool.False) else Bool.False) else Bool.False) else Bool.False)
 
 -- Repair ONE unversioned .1 bottle to .2 for this arch (content-addressed,
 -- idempotent). Returns (osTag, sha) for the .2 asset. If the .2 already exists it
@@ -1105,6 +1131,20 @@ regenVersionedRebuild2 = \tag -> \version -> \oneName -> do
       Main.verifyAssetSha "postverify-D(versioned .2)" tag verName sha
       namesNow <- Main.assetNames tag
       Main.assertPresent "postverify-D(versioned present)" namesNow verName
+      -- Fail closed (symmetric to bottleHasCompiledPackInit): the versioned .2's
+      -- bundled toolchain rides through unchanged here (only bin/pack + the
+      -- bin/idris2 sh wrapper are repointed), so its compiler boot file MUST stay
+      -- tokenized. Re-extract the published versioned .2 and assert the @@HOMEBREW
+      -- token via a fixed-string grep -q (no regex, no multi-MB .so read into Hell).
+      let vchk = "/tmp/bottle-d-ver-token"
+      Main.runChecked "pre-clean" (Process.proc "rm" ["-rf", vchk])
+      vpath <- Main.fetchAsset tag verName vchk
+      Main.runChecked "tar extract" (Process.proc "tar" ["-x", "-p", "-f", vpath, "-C", vchk])
+      let verToolchainSo = Text.concat [vchk, "/idris2-pack@", version, "/", version, "/libexec/idris2-toolchain/bin/idris2_app/idris2.so"]
+      verTokenized <- Main.exitedZero (Process.proc "grep" ["-F", "-q", "@@HOMEBREW", verToolchainSo])
+      Main.runChecked "cleanup" (Process.proc "rm" ["-rf", vchk])
+      Monad.when (Bool.not verTokenized)
+        (Exit.die (Text.concat ["postverify-D(versioned tokenized): toolchain idris2.so lost its @@HOMEBREW token in ", verName]))
       Main.runChecked "cleanup" (Process.proc "rm" ["-rf", workdir])
       IO.pure (osTag, sha)
 
