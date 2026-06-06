@@ -15,12 +15,16 @@
 --       double-dash cleanup finished; and
 --   (B) Formula/idris2-pack.rb contains a "rebuild 1" line -- i.e. Op B's single
 --       atomic two-file formula flip landed (it is the only thing that adds that
---       line, so its presence proves the SHA flip happened).
+--       line, so its presence proves the SHA flip happened); and
+--   (C) every Formula/idris2-pack@*.rb EXCEPT idris2-pack@2026.05.29.rb contains
+--       a "rebuild 1" line -- i.e. Op C's per-release LIBEXEC-token repair landed
+--       on all ten broken snapshots (the only thing that adds that line to a
+--       versioned formula). Pure local file reads, no downloads.
 --
--- Both clauses are cheap (one release-list sweep + one local file read), so a
--- post-completion tick short-circuits in seconds with no bottle downloads. When
--- the migration is incomplete the script ignores any marker and returns true so
--- the migrate job re-derives and finishes the remaining work.
+-- All three clauses are cheap (one release-list sweep + a handful of local file
+-- reads), so a post-completion tick short-circuits in seconds with no bottle
+-- downloads. When the migration is incomplete the script ignores any marker and
+-- returns true so the migrate job re-derives and finishes the remaining work.
 --
 -- Requires GH_TOKEN in environment. Designed for ubuntu-latest.
 
@@ -64,6 +68,27 @@ anyDoubleDashRemaining = do
   flags <- Monad.mapM Main.releaseHasDoubleDash tags
   IO.pure (List.any (\f -> f) flags)
 
+-- The version Op B repairs (excluded from Clause C; it uses Op B's rebuild path).
+opBVersion = "2026.05.29"
+
+-- Paths of all committed versioned formulas, minus the Op B formula. Derived from
+-- `git ls-files` (local, no network), never a hardcoded list.
+versionedFormulaPaths = do
+  raw <- Main.readChecked "git ls-files"
+    (Process.proc "git" ["ls-files", "--", "Formula/idris2-pack@*.rb"])
+  let paths = Main.lines raw
+  let opBPath = Text.concat ["Formula/idris2-pack@", Main.opBVersion, ".rb"]
+  IO.pure (List.filter (\p -> Bool.not (Eq.eq p opBPath)) paths)
+
+-- Clause C: every versioned formula (except 2026.05.29) carries `rebuild 1`,
+-- i.e. Op C's repair landed on all of them. Pure local file reads.
+allVersionedRebuilt = do
+  paths <- Main.versionedFormulaPaths
+  flags <- Monad.mapM (\p -> do
+    contents <- Text.readFile p
+    IO.pure (Text.isInfixOf "rebuild 1" contents)) paths
+  IO.pure (Bool.not (List.any (\f -> Bool.not f) flags))
+
 main = do
   args <- Environment.getArgs
   outPath <- Maybe.maybe
@@ -79,12 +104,20 @@ main = do
   -- Clause A: no double-dash asset remains on any release.
   doubleRemaining <- Main.anyDoubleDashRemaining
 
-  -- Complete iff the flip landed AND no double-dash remains. `Bool.and` is not
-  -- in this Hell build's prelude, so express the conjunction with a nested if
-  -- (the same idiom the migration script uses for its gate logic).
+  -- Clause C: every versioned formula except 2026.05.29 carries `rebuild 1`
+  -- (Op C's repair landed everywhere). Pure local file reads.
+  versionedRebuilt <- Main.allVersionedRebuilt
+
+  -- Complete iff the flip landed AND no double-dash remains AND every versioned
+  -- snapshot is repaired. `Bool.and` is not in this Hell build's prelude, so
+  -- express the conjunction with nested ifs (the same idiom the migration script
+  -- uses for its gate logic).
   let complete =
         if flipLanded
-          then Bool.not doubleRemaining
+          then
+            if Bool.not doubleRemaining
+              then versionedRebuilt
+              else Bool.False
           else Bool.False
   let shouldRun = Bool.not complete
 
