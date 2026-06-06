@@ -1134,7 +1134,7 @@
             "sha256": "dc090d0c8bc2c133ab9a7cda72d0b5098396e593e0b12ad90728a7208f8cd2d7"
           }
         ],
-        "rebuild": 1,
+        "rebuild": 2,
         "root_url": "https://github.com/Portfoligno/homebrew-idris/releases/download/idris2-pack-2026.05.29"
       },
       "collection": "nightly-260529",
