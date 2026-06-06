@@ -1,0 +1,115 @@
+#!/usr/bin/env hell
+
+-- Gate the idris2-pack-pin materializer source WITHOUT building or committing
+-- any binary. The runtime command cmd/brew-idris2-pack-pin compiles
+-- scripts/idris2-pack-materialize.idr on first use (Chez codegen, -p contrib)
+-- using the idris2 the idris2-pack keg ships; this check proves that exact
+-- source is sound before users hit it.
+-- Usage: ./scripts/check-materializer.hell
+--
+-- Gates (each a hard failure):
+--   * typecheck: `idris2 --check -p contrib` must succeed.
+--   * smoke render: compile the materializer the same way the entry point does,
+--     materialize the newest manifest version into a temp tap (the version as a
+--     real argv argument, the tap via HOMEBREW_IDRIS_TAP), and confirm a
+--     determinate, non-empty formula is produced -- diffed against a second
+--     independent compile+render to prove the output is reproducible.
+--
+-- Requires GH_TOKEN in environment (for brew).
+
+-- Run a process, capture stdout, die on failure.
+readChecked = \label -> \proc -> do
+  (exitCode, stdout, stderr) <- Text.readProcess proc
+  Exit.exitCode
+    (IO.pure stdout)
+    (\code -> Exit.die (Text.concat [label, " failed with exit code ", Show.show code, ": ", stderr]))
+    exitCode
+
+-- Run a process and die on failure (no stdout capture).
+runChecked = \label -> \proc -> do
+  result <- Process.runProcess proc
+  Exit.exitCode
+    (IO.pure ())
+    (\code -> Exit.die (Text.concat [label, " failed with exit code ", Show.show code]))
+    result
+
+-- Compile the materializer with the keg idris2 exactly as the entry point does
+-- (Chez codegen, contrib on the path) into build/exec/<outName>.
+compileMaterializer = \idris2 -> \outName -> do
+  Main.runChecked (Text.concat ["idris2 compile ", outName])
+    (Process.proc idris2
+      [ "--codegen", "chez"
+      , "-p", "contrib"
+      , "-o", outName
+      , "scripts/idris2-pack-materialize.idr"
+      ])
+
+-- Stage a throwaway tap (versions.json + the .erb) so the materializer can
+-- render into <dir>/Formula without touching the real tree.
+stageTap = \dir -> do
+  Main.runChecked "mkdir gate dir"
+    (Process.proc "mkdir" ["-p", Text.concat [dir, "/Formula"]])
+  Main.runChecked "cp manifest"
+    (Process.proc "cp" ["versions.json", Text.concat [dir, "/versions.json"]])
+  Main.runChecked "cp erb"
+    (Process.proc "cp" ["Formula/idris2-pack.rb.erb", Text.concat [dir, "/Formula/idris2-pack.rb.erb"]])
+
+-- Smoke-render gate: build the materializer twice from the SAME source and
+-- materialize the newest manifest version into two temp taps, then diff. Both
+-- binaries execute the same audited .idr against the same committed
+-- versions.json + Formula/idris2-pack.rb.erb, so agreement proves the render is
+-- determinate (and, with the typecheck, that the source users compile on first
+-- use is sound). `diff` exits non-zero on any difference (regex-free: only
+-- idris2/diff/cp/mkdir/rm). The version is passed as a real argv argument (the
+-- binary's own interface).
+assertSmokeRender = \idris2 -> do
+  latest <- Main.readChecked "jq newest version"
+    (Process.proc "jq" ["-r", ".versions | keys | sort | last", "versions.json"])
+  let version = Text.strip latest
+
+  Main.compileMaterializer idris2 "brew-idris2-pack-pin-a"
+  Main.compileMaterializer idris2 "brew-idris2-pack-pin-b"
+  let binA = "build/exec/brew-idris2-pack-pin-a"
+  let binB = "build/exec/brew-idris2-pack-pin-b"
+
+  let tapA = "/tmp/materializer-gate-a"
+  let tapB = "/tmp/materializer-gate-b"
+  Main.runChecked "rm gate dirs"
+    (Process.proc "rm" ["-rf", tapA, tapB])
+  Monad.mapM_ Main.stageTap [tapA, tapB]
+
+  Main.runChecked "materialize (a)"
+    (Process.setEnv [("HOMEBREW_IDRIS_TAP", tapA)]
+      (Process.proc binA [version]))
+  Main.runChecked "materialize (b)"
+    (Process.setEnv [("HOMEBREW_IDRIS_TAP", tapB)]
+      (Process.proc binB [version]))
+
+  let fileA = Text.concat [tapA, "/Formula/idris2-pack@", version, ".rb"]
+  let fileB = Text.concat [tapB, "/Formula/idris2-pack@", version, ".rb"]
+  Main.runChecked "smoke-render diff"
+    (Process.proc "diff" [fileA, fileB])
+
+  Main.runChecked "cleanup gate dirs"
+    (Process.proc "rm" ["-rf", tapA, tapB])
+  Text.putStrLn (Text.concat ["smoke-render gate passed for ", version])
+
+main = do
+  -- Install the toolchain (provides idris2 + contrib + chez) the same way the
+  -- user's entry point relies on it. brew is on PATH in CI.
+  Main.runChecked "brew install idris2-pack"
+    (Process.proc "brew" ["install", "Portfoligno/idris/idris2-pack"])
+
+  prefixRaw <- Main.readChecked "brew --prefix idris2-pack"
+    (Process.proc "brew" ["--prefix", "idris2-pack"])
+  let prefix = Text.strip prefixRaw
+  let idris2 = Text.concat [prefix, "/libexec/idris2-toolchain/bin/idris2"]
+
+  -- GATE 1 (typecheck): the materializer must compile clean before it ships.
+  Main.runChecked "idris2 --check materializer"
+    (Process.proc idris2 ["--check", "-p", "contrib", "scripts/idris2-pack-materialize.idr"])
+
+  -- GATE 2 (smoke render + determinism diff).
+  Main.assertSmokeRender idris2
+
+  Text.putStrLn "Materializer typechecked and smoke-rendered (no binary built or committed)"

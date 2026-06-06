@@ -62,9 +62,11 @@ main = do
   Main.runChecked "git checkout -b"
     (Process.proc "git" ["checkout", "-b", branch])
 
-  -- Stage and commit
+  -- Stage and commit. versions.json carries the per-date manifest record that
+  -- update-formula.hell wrote alongside the main formula; both move together so
+  -- the update branch is internally consistent.
   Main.runChecked "git add"
-    (Process.proc "git" ["add", "Formula/idris2-pack.rb"])
+    (Process.proc "git" ["add", "Formula/idris2-pack.rb", "versions.json"])
 
   let commitMsg = Text.concat ["idris2-pack ", version, "\n\nUpdate to nightly collection ", collectionFile]
   Main.runChecked "git commit"

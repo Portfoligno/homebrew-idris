@@ -41,17 +41,47 @@ pack gc
 
 ## Pin to a specific version
 
-Starting from version 2026.05.02, each release publishes a versioned formula that can be installed alongside the latest:
+Dated snapshots are materialized on demand, so the tap stays clean while every
+historical version remains installable. Install the base formula first (it
+supplies the Idris2 compiler the pin command builds itself with), then generate
+the dated formula and install it:
 
 ```sh
+brew install Portfoligno/idris/idris2-pack
+brew idris2-pack-pin 2026.05.02
 brew install Portfoligno/idris/idris2-pack@2026.05.02
 ```
 
-Versioned formulas are keg-only. Access the pinned binary via:
+`brew idris2-pack-pin` is an external command shipped with the tap: a thin
+POSIX `sh` entry point at `cmd/brew-idris2-pack-pin` whose only job is to
+compile the committed Idris materializer (`scripts/idris2-pack-materialize.idr`)
+on first use — using the idris2 the installed `idris2-pack` keg ships — cache it
+in the tap's gitignored `build/`, and run it. No binary is committed to the tap;
+recompilation happens only when the source changes. It renders
+`Formula/idris2-pack@<date>.rb` from the committed `versions.json` manifest +
+`Formula/idris2-pack.rb.erb`. Because it needs that compiler, `idris2-pack` must
+be installed before pinning; the command fails loudly if it is not. List the
+dates the tap can generate:
+
+```sh
+brew idris2-pack-pin --list
+```
+
+Other subcommands: `--all` (materialize every version), `--prune` (remove
+generated formulae no longer in the manifest), and `--install <date>`
+(materialize then install in one step).
+
+Generated formulae are written into your local tap and survive `brew update`
+(they are gitignored, so a tap reset never clobbers them). Versioned formulas
+are keg-only; access the pinned binary via:
 
 ```sh
 "$(brew --prefix idris2-pack@2026.05.02)/bin/pack" help
 ```
+
+Already installed a dated version before this change? It keeps working —
+`brew --prefix`, `brew list`, and `brew uninstall` resolve it from the
+installed keg even though the tap no longer ships a committed file.
 
 ## How it works
 

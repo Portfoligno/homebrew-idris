@@ -189,6 +189,71 @@ buildInstallBlock = \name -> \installSteps -> do
     , "    end"
     ])
 
+-- Build one library JSON object for the manifest. The filter is a static
+-- literal; the ipkg install paths flow in as $ARGS.positional (typed), never
+-- concatenated into the filter. Returns a compact one-line JSON object.
+buildLibraryJson = \name -> \url -> \sha -> \installSteps -> do
+  let installArr = Text.splitOn ";" installSteps
+  out <- Main.readChecked "jq library object"
+    (Process.proc "jq"
+      ([ "-cn"
+       , "--arg", "name", name
+       , "--arg", "url", url
+       , "--arg", "sha", sha
+       , "{ name: $name, url: $url, sha256: $sha, ipkgs: $ARGS.positional }"
+       , "--args"
+       ] <> installArr))
+  IO.pure (Text.strip out)
+
+-- Wrap the per-library JSON objects into a JSON array (typed --jsonargs).
+buildLibrariesArray = \libraryJsons -> do
+  out <- Main.readChecked "jq libraries array"
+    (Process.proc "jq"
+      (["-cn", "$ARGS.positional", "--jsonargs"] <> libraryJsons))
+  IO.pure (Text.strip out)
+
+-- Merge the version record into versions.json. Bottle entry SHAs are null here;
+-- they are filled at publish time by create-versioned-formula.hell once the
+-- versioned bottles are repackaged and uploaded. The bottle os keys mirror the
+-- arm64-only bottle matrix (sequoia, sonoma). --sort-keys keeps the manifest
+-- diff byte-stable. Static jq filter; all variable data is passed as typed
+-- --arg/--argjson, never concatenated into the filter.
+mergeManifestRecord = \version -> \collection -> \packCommit -> \packSha
+                       -> \idris2Commit -> \idris2Sha -> \librariesJson -> do
+  let manifestPath = "versions.json"
+  let rootUrl = Text.concat
+        ["https://github.com/Portfoligno/homebrew-idris/releases/download/idris2-pack-", version]
+  -- versions.json is committed and always present in the checkout, so the jq
+  -- merge reads it directly; a missing file is a hard error from jq (not a
+  -- silently-created stub), surfacing a broken checkout immediately.
+  let filter = Text.concat
+        [ ".versions[$v] = "
+        , "{ version: $v"
+        , ", collection: $collection"
+        , ", pack: { commit: $packCommit, sha256: $packSha }"
+        , ", idris2: { commit: $idris2Commit, sha256: $idris2Sha }"
+        , ", bottle: { root_url: $rootUrl, rebuild: 0, cellar: \"any\""
+        , ", entries: [ { os: \"arm64_sequoia\", sha256: null }"
+        , ", { os: \"arm64_sonoma\", sha256: null } ] }"
+        , ", libraries: $libraries }"
+        , " | .default = $v"
+        ]
+  updated <- Main.readChecked "jq merge manifest record"
+    (Process.proc "jq"
+      [ "--sort-keys"
+      , "--arg", "v", version
+      , "--arg", "collection", collection
+      , "--arg", "packCommit", packCommit
+      , "--arg", "packSha", packSha
+      , "--arg", "idris2Commit", idris2Commit
+      , "--arg", "idris2Sha", idris2Sha
+      , "--arg", "rootUrl", rootUrl
+      , "--argjson", "libraries", librariesJson
+      , filter
+      , manifestPath
+      ])
+  Text.writeFile manifestPath (Text.concat [Text.strip updated, "\n"])
+
 main = do
   args <- Environment.getArgs
   let argList = args
@@ -299,3 +364,18 @@ main = do
 
   Text.writeFile "Formula/idris2-pack.rb" formula
   Text.putStrLn "Formula written to Formula/idris2-pack.rb"
+
+  -- Step 8: Emit the manifest record from the SAME structured data resolved
+  -- above (pack/idris2 commits+shas, ordered libraries + ipkg steps,
+  -- collection). Bottle entry SHAs are written as null here; publish-time
+  -- create-versioned-formula.hell fills them once the versioned bottles are
+  -- repackaged and uploaded. This replaces committing per-date @<date>.rb
+  -- files: the dated formulae are now materialized on demand from this record.
+  libraryJsons <- Monad.mapM (\p -> do
+    let (n, u, s, steps) = p
+    Main.buildLibraryJson n u s steps
+    ) processed
+  librariesArray <- Main.buildLibrariesArray libraryJsons
+  Main.mergeManifestRecord version collectionName packCommit packSha
+                           idris2Commit idris2Sha librariesArray
+  Text.putStrLn "Manifest record written to versions.json"

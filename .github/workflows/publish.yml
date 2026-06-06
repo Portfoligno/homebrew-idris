@@ -51,12 +51,12 @@ jobs:
       - name: Setup Hell
         uses: ./.github/actions/setup-hell
 
-      - name: Create versioned formula and repackage bottles
+      - name: Repackage bottles and record SHAs in versions.json
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: ./scripts/create-versioned-formula.hell
 
-      - name: Commit and push versioned formula
+      - name: Commit and push versions.json
         run: ./scripts/commit-versioned-formula.hell
 
       - name: Delete branch

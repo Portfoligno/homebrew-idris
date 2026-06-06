@@ -1,11 +1,17 @@
 #!/usr/bin/env hell
 
--- Create a versioned formula snapshot and repackage bottles.
+-- Repackage versioned bottles and record their SHAs in versions.json.
 -- Usage: ./scripts/create-versioned-formula.hell
 --
--- Reads the version from Formula/idris2-pack.rb, transforms it into a
--- versioned formula (idris2-pack@VERSION.rb), repackages bottle assets
--- with versioned internal paths, and uploads them back to the release.
+-- Reads the version from Formula/idris2-pack.rb, repackages each base bottle
+-- asset on the release with versioned internal paths (renamed top dir +
+-- rewritten relocation token), uploads them back to the release, and writes
+-- each freshly-computed SHA into the version's bottle.entries in versions.json.
+--
+-- The dated idris2-pack@<version>.rb is NO LONGER written or committed here:
+-- it is materialized on demand from versions.json by the idris2-pack-pin
+-- external command. The manifest record (sources, libraries, collection,
+-- bottle skeleton with null SHAs) is created earlier by update-formula.hell.
 --
 -- Requires GH_TOKEN in environment.
 
@@ -35,40 +41,58 @@ rewriteToken = \path -> \oldToken -> \newToken -> do
     (Exit.die (Text.concat ["rewriteToken: token not found in ", path, ": ", oldToken]))
   Text.writeFile path (Text.replace oldToken newToken contents)
 
--- Guarded in-memory replace: like Text.replace, but die if the anchor is
--- absent (so an anchor drift becomes a hard error, not a silent no-op).
-replaceChecked = \label -> \needle -> \repl -> \contents -> do
-  Monad.when (Bool.not (Text.isInfixOf needle contents))
-    (Exit.die (Text.concat [label, ": anchor not found: ", needle]))
-  IO.pure (Text.replace needle repl contents)
+-- Write a build-time-computed versioned-bottle SHA into versions.json for
+-- (version, osTag). The manifest entry and its bottle.entries skeleton were
+-- created by update-formula.hell (with null SHAs) and merged to main by
+-- brew pr-pull, so the (version -> bottle -> os entry) must already exist; a
+-- missing one is a hard error (jq -e die) rather than a silently-inserted
+-- stray key. Static jq filters, typed --arg, no regex/sed, no string-built
+-- command argument. The freshly-computed SHA is only copied here -- never
+-- recomputed downstream: the materializer copies it again into the rendered
+-- @<date>.rb, and brew verifies it at pour time.
+setManifestBottleSha = \version -> \osTag -> \newSha -> do
+  let manifestPath = "versions.json"
+  -- Probe: the os entry must already exist under this version's bottle.
+  _ <- Main.readChecked "jq probe bottle os entry"
+    (Process.proc "jq"
+      [ "-e", "--arg", "v", version, "--arg", "os", osTag
+      , ".versions[$v].bottle.entries | map(.os) | index($os) != null"
+      , manifestPath
+      ])
+  -- Set the SHA on the matching ordered entry, preserving entry order.
+  updated <- Main.readChecked "jq set bottle sha"
+    (Process.proc "jq"
+      [ "--sort-keys"
+      , "--arg", "v", version, "--arg", "os", osTag, "--arg", "sha", newSha
+      , ".versions[$v].bottle.entries |= map(if .os == $os then .sha256 = $sha else . end)"
+      , manifestPath
+      ])
+  Text.writeFile manifestPath (Text.concat [Text.strip updated, "\n"])
 
--- Update the bottle sha256 for a single os tag in a formula file, guarded.
--- Reads the file, anchors on `sha256 cellar: :any, <osTag>:`, reads back the
--- currently-quoted digest after that anchor, and rewrites exactly that quoted
--- token to newSha (the 64-hex token is unique), then writes the file. Dies if
--- the anchor is absent or the digest is not double-quoted, so a layout drift is
--- a hard error rather than the silent no-op that `sed` (exit 0 on 0 subs)
--- produced. In-memory Text.replace -- no external sed, no regex, no string-built
--- command argument.
-updateBottleSha = \path -> \osTag -> \newSha -> do
-  contents <- Text.readFile path
-  let anchor = Text.concat ["sha256 cellar: :any, ", osTag, ":"]
-  Monad.when (Bool.not (Text.isInfixOf anchor contents))
-    (Exit.die (Text.concat ["updateBottleSha: anchor not found in ", path, ": ", anchor]))
-  let (_before, afterAnchor) = Text.breakOn anchor contents
-  -- afterAnchor starts with the anchor; drop it, then take the first quoted run.
-  let afterAnchorBody = Text.drop (Text.length anchor) afterAnchor
-  let (_pre, fromQuote) = Text.breakOn "\"" afterAnchorBody
-  Monad.when (Eq.eq (Text.length fromQuote) 0)
-    (Exit.die (Text.concat ["updateBottleSha: no opening quote after ", anchor]))
-  let afterOpenQuote = Text.drop 1 fromQuote
-  let (oldSha, closing) = Text.breakOn "\"" afterOpenQuote
-  Monad.when (Eq.eq (Text.length closing) 0)
-    (Exit.die (Text.concat ["updateBottleSha: no closing quote after ", anchor]))
-  let oldToken = Text.concat ["\"", oldSha, "\""]
-  let newToken = Text.concat ["\"", newSha, "\""]
-  newContents <- Main.replaceChecked "updateBottleSha" oldToken newToken contents
-  Text.writeFile path newContents
+-- Write the bottle rebuild counter into versions.json for this version.
+-- update-formula.hell seeds rebuild: 0 at render time (before any bottle
+-- exists); the real counter is only known after brew pr-pull merges the bottle
+-- block into Formula/idris2-pack.rb, so it is captured here from that merged
+-- formula. The versioned formula mirrors the base bottle's rebuild, and the
+-- materializer emits `rebuild N` iff N > 0 (absent line == 0). Passed via
+-- --argjson so a non-integer is a hard jq error rather than a silent string.
+setManifestRebuild = \version -> \rebuild -> do
+  let manifestPath = "versions.json"
+  -- Probe: the version entry must already exist (created by update-formula.hell).
+  _ <- Main.readChecked "jq probe version entry"
+    (Process.proc "jq"
+      [ "-e", "--arg", "v", version
+      , ".versions[$v] != null"
+      , manifestPath
+      ])
+  updated <- Main.readChecked "jq set rebuild"
+    (Process.proc "jq"
+      [ "--sort-keys"
+      , "--arg", "v", version, "--argjson", "rebuild", rebuild
+      , ".versions[$v].bottle.rebuild = $rebuild"
+      , manifestPath
+      ])
+  Text.writeFile manifestPath (Text.concat [Text.strip updated, "\n"])
 
 -- Extract the version string from the main formula.
 extractVersion = do
@@ -83,6 +107,19 @@ extractVersion = do
   let withoutPrefix = Text.drop (Text.length "version \"") trimmedLine
   let (ver, _rest) = Text.breakOn "\"" withoutPrefix
   IO.pure ver
+
+-- Extract the bottle rebuild counter from the main formula, defaulting to "0"
+-- when no `rebuild` line is present in the bottle block. Returned as the JSON
+-- numeric literal text for --argjson (e.g. "0", "1"). Only the bottle block
+-- carries a `rebuild` line, so a prefix match on the stripped line is exact.
+extractRebuild = do
+  formulaContents <- Text.readFile "Formula/idris2-pack.rb"
+  let formulaLines = Text.splitOn "\n" formulaContents
+  let rebuildLines = List.filter (\line -> Text.isPrefixOf "rebuild " (Text.strip line)) formulaLines
+  Maybe.maybe
+    (IO.pure "0")
+    (\line -> IO.pure (Text.strip (Text.drop (Text.length "rebuild ") (Text.strip line))))
+    (Maybe.listToMaybe rebuildLines)
 
 -- Process a single bottle asset: download, repackage, update SHA, upload.
 -- Returns (os_tag, new_sha) for updating the formula.
@@ -213,26 +250,15 @@ main = do
   version <- Main.extractVersion
   Text.putStrLn (Text.concat ["Version: ", version])
 
+  -- Capture the merged bottle rebuild counter into the manifest. update-formula
+  -- .hell seeded rebuild: 0 before bottles existed; brew pr-pull has since
+  -- merged the real counter into Formula/idris2-pack.rb, so record it now (the
+  -- materializer renders `rebuild N` from this when N > 0).
+  rebuild <- Main.extractRebuild
+  Main.setManifestRebuild version rebuild
+  Text.putStrLn (Text.concat ["Rebuild counter recorded in versions.json: ", rebuild])
+
   let releaseTag = Text.concat ["idris2-pack-", version]
-  let outputPath = Text.concat ["Formula/idris2-pack@", version, ".rb"]
-
-  -- Read and transform the formula
-  content <- Text.readFile "Formula/idris2-pack.rb"
-
-  -- Rename class: Idris2Pack -> Idris2PackATYYYYMMDD (dots removed from version)
-  -- Both rewrites are guarded: a missing anchor (formula reformatted) is a hard
-  -- error, not a silent no-op that would emit a class-colliding/non-keg-only file.
-  let classSuffix = Text.replace "." "" version
-  content2 <- Main.replaceChecked "class rename"
-    "class Idris2Pack < Formula"
-    (Text.concat ["class Idris2PackAT", classSuffix, " < Formula"])
-    content
-
-  -- Insert keg_only after the bottle end block
-  content3 <- Main.replaceChecked "keg_only insert"
-    "  end\n\n  depends_on"
-    "  end\n\n  keg_only :versioned_formula\n\n  depends_on"
-    content2
 
   -- List bottle assets from the release. A gh failure (network/auth/wrong tag)
   -- must be fatal, not conflated with an empty release via an "" sentinel.
@@ -256,18 +282,16 @@ main = do
                  else Bool.False)
         allAssets
 
-  -- Write the intermediate formula (placeholder SHAs); each bottle's SHA is then
-  -- patched in via a guarded in-memory replace -- no external sed, no regex, no
-  -- string-built command argument, and a missing tag is a hard error (not the
-  -- silent no-op `sed` produced).
-  Text.writeFile outputPath content3
-
+  -- Repackage + upload each versioned bottle (unchanged), then record its
+  -- freshly-computed SHA into versions.json under this version's bottle entry.
+  -- The dated @<date>.rb is no longer written or committed here: it is
+  -- materialized on demand from versions.json by the idris2-pack-pin command.
   if Eq.eq (List.length bottleAssets) 0
     then Text.putStrLn "WARNING: No bottle assets found"
     else
       Monad.mapM_ (\assetName -> do
         (osTag, newSha) <- Main.processBottle releaseTag version assetName
-        Main.updateBottleSha outputPath osTag newSha
+        Main.setManifestBottleSha version osTag newSha
         ) bottleAssets
 
-  Text.putStrLn (Text.concat ["Versioned formula written to ", outputPath])
+  Text.putStrLn (Text.concat ["Versioned-bottle SHAs recorded in versions.json for ", version])

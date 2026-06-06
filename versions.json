@@ -1,0 +1,1331 @@
+{
+  "default": "2026.06.05",
+  "versions": {
+    "2026.05.02": {
+      "bottle": {
+        "cellar": "any",
+        "entries": [
+          {
+            "os": "arm64_sequoia",
+            "sha256": "9e1bbf15ae5f397395919a43f221db858369eba12e5f2869f177a9b24b594f46"
+          },
+          {
+            "os": "arm64_sonoma",
+            "sha256": "101e5e95ebab5e092222c03938529efad564651d8a38e26425ed1dc41621a3dd"
+          }
+        ],
+        "rebuild": 1,
+        "root_url": "https://github.com/Portfoligno/homebrew-idris/releases/download/idris2-pack-2026.05.02"
+      },
+      "collection": "collection",
+      "idris2": {
+        "commit": "214eb45472e15187e6f932c6820a0f0d5542a18e",
+        "sha256": "8c880e676c71917abd7033cc6e308758cf72d81f95187ee272669c6d9efc4596"
+      },
+      "libraries": [
+        {
+          "ipkgs": [
+            "algebra.ipkg"
+          ],
+          "name": "idris2-algebra",
+          "sha256": "dfe2a3554ba2437c121f962dba2eaca1a2416803306910fc5a1d66283d47f034",
+          "url": "https://github.com/stefan-hoeck/idris2-algebra/archive/e279843a99fe250e2fcd928c774ddb6ffe36815b.tar.gz"
+        },
+        {
+          "ipkgs": [
+            "ref1.ipkg"
+          ],
+          "name": "idris2-ref1",
+          "sha256": "4d5318b8da9e167ff52cc5921f2ee82fce6c587e38edfeff61c6c8b1767d5905",
+          "url": "https://github.com/stefan-hoeck/idris2-ref1/archive/f5b771217295ee692080c08ce5627644c3f86c73.tar.gz"
+        },
+        {
+          "ipkgs": [
+            "array.ipkg"
+          ],
+          "name": "idris2-array",
+          "sha256": "c6ca326e3114b3011e2c8174afeafd379ae509fdbd389c12ad6d681ca6f75bc7",
+          "url": "https://github.com/stefan-hoeck/idris2-array/archive/8f9c84bc71dae21c6fe430296c6a094f7706748c.tar.gz"
+        },
+        {
+          "ipkgs": [
+            "bytestring.ipkg"
+          ],
+          "name": "idris2-bytestring",
+          "sha256": "b2c74a34038bb35264587eef3279a9e750f356e25f16856b6da57401b07bf095",
+          "url": "https://github.com/stefan-hoeck/idris2-bytestring/archive/230d8577f02de22251786f128ec921078da4d880.tar.gz"
+        },
+        {
+          "ipkgs": [
+            "getopts.ipkg"
+          ],
+          "name": "idris2-getopts",
+          "sha256": "904ef2a23953856655e9e255345696932e9540ab5e24e43f448f18945034e7b9",
+          "url": "https://github.com/idris-community/idris2-getopts/archive/0d41b98f83f3707deb0ffbc595ef36b7d9cb9eab.tar.gz"
+        },
+        {
+          "ipkgs": [
+            "elab-util.ipkg"
+          ],
+          "name": "idris2-elab-util",
+          "sha256": "cd15b43d5e3bd0631649de8539174691302e29728740f8e29bab09928ef59bac",
+          "url": "https://github.com/stefan-hoeck/idris2-elab-util/archive/90a2363256cbaafd3b0cc4e2bf36003761b6c4f0.tar.gz"
+        },
+        {
+          "ipkgs": [
+            "refined.ipkg"
+          ],
+          "name": "idris2-refined",
+          "sha256": "a3bdc2fd25b09b9c1769d61ef8115f986c369540a7b0cdb2a72eb879d535a4de",
+          "url": "https://github.com/stefan-hoeck/idris2-refined/archive/02e43fa2b89076b4096c5f442bac7bea8814d552.tar.gz"
+        },
+        {
+          "ipkgs": [
+            "literal.ipkg"
+          ],
+          "name": "idris2-literal",
+          "sha256": "ce69894d3c8a75c681c738b87719bf0fd87ef6b72e53a72b92e789b3451d9057",
+          "url": "https://github.com/stefan-hoeck/idris2-literal/archive/f0fed86ae9bd5b13d98e4dd18103a6e1f7f7c6b4.tar.gz"
+        },
+        {
+          "ipkgs": [
+            "core/ilex-core.ipkg",
+            "ilex.ipkg",
+            "json/ilex-json.ipkg",
+            "toml/ilex-toml.ipkg"
+          ],
+          "name": "idris2-ilex",
+          "sha256": "15f2fcd092ac7f36b654da2569a7317207902a1057c53f81aa7ec40342edc6a8",
+          "url": "https://github.com/stefan-hoeck/idris2-ilex/archive/56098d3a15767e68eeafa081345ecf4159cdf8e5.tar.gz"
+        },
+        {
+          "ipkgs": [
+            "filepath.ipkg"
+          ],
+          "name": "idris2-filepath",
+          "sha256": "681105b67a528329c12bff59d4359c6b7d2906ad9f8935c1392057ec550d48a2",
+          "url": "https://github.com/stefan-hoeck/idris2-filepath/archive/4e8fe9af80d457adc63904ebf58e223ba35c62aa.tar.gz"
+        }
+      ],
+      "pack": {
+        "commit": "ffff61f5b0400525d7b0c41eef79e83ebe2b0b52",
+        "sha256": "f8b79be795445bfb7440a856db31760bfbfc62f272b9fcef40d2c09a805f6d49"
+      },
+      "version": "2026.05.02"
+    },
+    "2026.05.04": {
+      "bottle": {
+        "cellar": "any",
+        "entries": [
+          {
+            "os": "arm64_sequoia",
+            "sha256": "86a478ecb8ed8bfe10da0675743c368e0ba949fd917c807c0d21d105d56b860f"
+          },
+          {
+            "os": "arm64_sonoma",
+            "sha256": "9f8fde41662c34d4a1f3495acfeb92ae2dc3e237d7ec4588537c67b3d13dd6a6"
+          }
+        ],
+        "rebuild": 1,
+        "root_url": "https://github.com/Portfoligno/homebrew-idris/releases/download/idris2-pack-2026.05.04"
+      },
+      "collection": "collection",
+      "idris2": {
+        "commit": "214eb45472e15187e6f932c6820a0f0d5542a18e",
+        "sha256": "8c880e676c71917abd7033cc6e308758cf72d81f95187ee272669c6d9efc4596"
+      },
+      "libraries": [
+        {
+          "ipkgs": [
+            "algebra.ipkg"
+          ],
+          "name": "idris2-algebra",
+          "sha256": "dfe2a3554ba2437c121f962dba2eaca1a2416803306910fc5a1d66283d47f034",
+          "url": "https://github.com/stefan-hoeck/idris2-algebra/archive/e279843a99fe250e2fcd928c774ddb6ffe36815b.tar.gz"
+        },
+        {
+          "ipkgs": [
+            "ref1.ipkg"
+          ],
+          "name": "idris2-ref1",
+          "sha256": "4d5318b8da9e167ff52cc5921f2ee82fce6c587e38edfeff61c6c8b1767d5905",
+          "url": "https://github.com/stefan-hoeck/idris2-ref1/archive/f5b771217295ee692080c08ce5627644c3f86c73.tar.gz"
+        },
+        {
+          "ipkgs": [
+            "array.ipkg"
+          ],
+          "name": "idris2-array",
+          "sha256": "c6ca326e3114b3011e2c8174afeafd379ae509fdbd389c12ad6d681ca6f75bc7",
+          "url": "https://github.com/stefan-hoeck/idris2-array/archive/8f9c84bc71dae21c6fe430296c6a094f7706748c.tar.gz"
+        },
+        {
+          "ipkgs": [
+            "bytestring.ipkg"
+          ],
+          "name": "idris2-bytestring",
+          "sha256": "b2c74a34038bb35264587eef3279a9e750f356e25f16856b6da57401b07bf095",
+          "url": "https://github.com/stefan-hoeck/idris2-bytestring/archive/230d8577f02de22251786f128ec921078da4d880.tar.gz"
+        },
+        {
+          "ipkgs": [
+            "getopts.ipkg"
+          ],
+          "name": "idris2-getopts",
+          "sha256": "904ef2a23953856655e9e255345696932e9540ab5e24e43f448f18945034e7b9",
+          "url": "https://github.com/idris-community/idris2-getopts/archive/0d41b98f83f3707deb0ffbc595ef36b7d9cb9eab.tar.gz"
+        },
+        {
+          "ipkgs": [
+            "elab-util.ipkg"
+          ],
+          "name": "idris2-elab-util",
+          "sha256": "cd15b43d5e3bd0631649de8539174691302e29728740f8e29bab09928ef59bac",
+          "url": "https://github.com/stefan-hoeck/idris2-elab-util/archive/90a2363256cbaafd3b0cc4e2bf36003761b6c4f0.tar.gz"
+        },
+        {
+          "ipkgs": [
+            "refined.ipkg"
+          ],
+          "name": "idris2-refined",
+          "sha256": "a3bdc2fd25b09b9c1769d61ef8115f986c369540a7b0cdb2a72eb879d535a4de",
+          "url": "https://github.com/stefan-hoeck/idris2-refined/archive/02e43fa2b89076b4096c5f442bac7bea8814d552.tar.gz"
+        },
+        {
+          "ipkgs": [
+            "literal.ipkg"
+          ],
+          "name": "idris2-literal",
+          "sha256": "ce69894d3c8a75c681c738b87719bf0fd87ef6b72e53a72b92e789b3451d9057",
+          "url": "https://github.com/stefan-hoeck/idris2-literal/archive/f0fed86ae9bd5b13d98e4dd18103a6e1f7f7c6b4.tar.gz"
+        },
+        {
+          "ipkgs": [
+            "core/ilex-core.ipkg",
+            "ilex.ipkg",
+            "json/ilex-json.ipkg",
+            "toml/ilex-toml.ipkg"
+          ],
+          "name": "idris2-ilex",
+          "sha256": "15f2fcd092ac7f36b654da2569a7317207902a1057c53f81aa7ec40342edc6a8",
+          "url": "https://github.com/stefan-hoeck/idris2-ilex/archive/56098d3a15767e68eeafa081345ecf4159cdf8e5.tar.gz"
+        },
+        {
+          "ipkgs": [
+            "filepath.ipkg"
+          ],
+          "name": "idris2-filepath",
+          "sha256": "681105b67a528329c12bff59d4359c6b7d2906ad9f8935c1392057ec550d48a2",
+          "url": "https://github.com/stefan-hoeck/idris2-filepath/archive/4e8fe9af80d457adc63904ebf58e223ba35c62aa.tar.gz"
+        }
+      ],
+      "pack": {
+        "commit": "ffff61f5b0400525d7b0c41eef79e83ebe2b0b52",
+        "sha256": "f8b79be795445bfb7440a856db31760bfbfc62f272b9fcef40d2c09a805f6d49"
+      },
+      "version": "2026.05.04"
+    },
+    "2026.05.11": {
+      "bottle": {
+        "cellar": "any",
+        "entries": [
+          {
+            "os": "arm64_sequoia",
+            "sha256": "94ec9594fb4907e66083f26fa38e00f6953839ced75831d7f276368e0c73ca99"
+          },
+          {
+            "os": "arm64_sonoma",
+            "sha256": "30b786defc06a51830014ba22332fbe9a2ea153998562fd119546d42c50e1f23"
+          }
+        ],
+        "rebuild": 1,
+        "root_url": "https://github.com/Portfoligno/homebrew-idris/releases/download/idris2-pack-2026.05.11"
+      },
+      "collection": "collection",
+      "idris2": {
+        "commit": "b61f0ac790559c018b34a764455642f606789249",
+        "sha256": "16049003d8af826dc67ad5f48af53001362a1848dd8b252b1fd1d1ad0a51df8d"
+      },
+      "libraries": [
+        {
+          "ipkgs": [
+            "algebra.ipkg"
+          ],
+          "name": "idris2-algebra",
+          "sha256": "dfe2a3554ba2437c121f962dba2eaca1a2416803306910fc5a1d66283d47f034",
+          "url": "https://github.com/stefan-hoeck/idris2-algebra/archive/e279843a99fe250e2fcd928c774ddb6ffe36815b.tar.gz"
+        },
+        {
+          "ipkgs": [
+            "ref1.ipkg"
+          ],
+          "name": "idris2-ref1",
+          "sha256": "4d5318b8da9e167ff52cc5921f2ee82fce6c587e38edfeff61c6c8b1767d5905",
+          "url": "https://github.com/stefan-hoeck/idris2-ref1/archive/f5b771217295ee692080c08ce5627644c3f86c73.tar.gz"
+        },
+        {
+          "ipkgs": [
+            "array.ipkg"
+          ],
+          "name": "idris2-array",
+          "sha256": "c6ca326e3114b3011e2c8174afeafd379ae509fdbd389c12ad6d681ca6f75bc7",
+          "url": "https://github.com/stefan-hoeck/idris2-array/archive/8f9c84bc71dae21c6fe430296c6a094f7706748c.tar.gz"
+        },
+        {
+          "ipkgs": [
+            "bytestring.ipkg"
+          ],
+          "name": "idris2-bytestring",
+          "sha256": "b2c74a34038bb35264587eef3279a9e750f356e25f16856b6da57401b07bf095",
+          "url": "https://github.com/stefan-hoeck/idris2-bytestring/archive/230d8577f02de22251786f128ec921078da4d880.tar.gz"
+        },
+        {
+          "ipkgs": [
+            "getopts.ipkg"
+          ],
+          "name": "idris2-getopts",
+          "sha256": "904ef2a23953856655e9e255345696932e9540ab5e24e43f448f18945034e7b9",
+          "url": "https://github.com/idris-community/idris2-getopts/archive/0d41b98f83f3707deb0ffbc595ef36b7d9cb9eab.tar.gz"
+        },
+        {
+          "ipkgs": [
+            "elab-util.ipkg"
+          ],
+          "name": "idris2-elab-util",
+          "sha256": "cd15b43d5e3bd0631649de8539174691302e29728740f8e29bab09928ef59bac",
+          "url": "https://github.com/stefan-hoeck/idris2-elab-util/archive/90a2363256cbaafd3b0cc4e2bf36003761b6c4f0.tar.gz"
+        },
+        {
+          "ipkgs": [
+            "refined.ipkg"
+          ],
+          "name": "idris2-refined",
+          "sha256": "a3bdc2fd25b09b9c1769d61ef8115f986c369540a7b0cdb2a72eb879d535a4de",
+          "url": "https://github.com/stefan-hoeck/idris2-refined/archive/02e43fa2b89076b4096c5f442bac7bea8814d552.tar.gz"
+        },
+        {
+          "ipkgs": [
+            "literal.ipkg"
+          ],
+          "name": "idris2-literal",
+          "sha256": "ce69894d3c8a75c681c738b87719bf0fd87ef6b72e53a72b92e789b3451d9057",
+          "url": "https://github.com/stefan-hoeck/idris2-literal/archive/f0fed86ae9bd5b13d98e4dd18103a6e1f7f7c6b4.tar.gz"
+        },
+        {
+          "ipkgs": [
+            "core/ilex-core.ipkg",
+            "ilex.ipkg",
+            "json/ilex-json.ipkg",
+            "toml/ilex-toml.ipkg"
+          ],
+          "name": "idris2-ilex",
+          "sha256": "15f2fcd092ac7f36b654da2569a7317207902a1057c53f81aa7ec40342edc6a8",
+          "url": "https://github.com/stefan-hoeck/idris2-ilex/archive/56098d3a15767e68eeafa081345ecf4159cdf8e5.tar.gz"
+        },
+        {
+          "ipkgs": [
+            "filepath.ipkg"
+          ],
+          "name": "idris2-filepath",
+          "sha256": "681105b67a528329c12bff59d4359c6b7d2906ad9f8935c1392057ec550d48a2",
+          "url": "https://github.com/stefan-hoeck/idris2-filepath/archive/4e8fe9af80d457adc63904ebf58e223ba35c62aa.tar.gz"
+        }
+      ],
+      "pack": {
+        "commit": "994d7a31050654cfd1a79f33cad4b0e97a37d38e",
+        "sha256": "3a684bd9e72266a68e1e9e3b88837cb94cbd86dc3a313729c5235069d5ffa5a4"
+      },
+      "version": "2026.05.11"
+    },
+    "2026.05.15": {
+      "bottle": {
+        "cellar": "any",
+        "entries": [
+          {
+            "os": "arm64_sequoia",
+            "sha256": "c3ed8f711168ad360eb3e6fc0679861a2da2b91e3bdd20a58e8746929ec2ad49"
+          },
+          {
+            "os": "arm64_sonoma",
+            "sha256": "70731486eefa879711afd8b5374c60b40932604ea53a5f4af9c31d3dabd55b1c"
+          }
+        ],
+        "rebuild": 1,
+        "root_url": "https://github.com/Portfoligno/homebrew-idris/releases/download/idris2-pack-2026.05.15"
+      },
+      "collection": "collection",
+      "idris2": {
+        "commit": "6a54860ee748accc1a2be1da4a77727b5be4c1dc",
+        "sha256": "ed7ae919ea0bd24222bf9588480933847d0baffbc36c4b165a49206361594737"
+      },
+      "libraries": [
+        {
+          "ipkgs": [
+            "algebra.ipkg"
+          ],
+          "name": "idris2-algebra",
+          "sha256": "dfe2a3554ba2437c121f962dba2eaca1a2416803306910fc5a1d66283d47f034",
+          "url": "https://github.com/stefan-hoeck/idris2-algebra/archive/e279843a99fe250e2fcd928c774ddb6ffe36815b.tar.gz"
+        },
+        {
+          "ipkgs": [
+            "ref1.ipkg"
+          ],
+          "name": "idris2-ref1",
+          "sha256": "4d5318b8da9e167ff52cc5921f2ee82fce6c587e38edfeff61c6c8b1767d5905",
+          "url": "https://github.com/stefan-hoeck/idris2-ref1/archive/f5b771217295ee692080c08ce5627644c3f86c73.tar.gz"
+        },
+        {
+          "ipkgs": [
+            "array.ipkg"
+          ],
+          "name": "idris2-array",
+          "sha256": "c6ca326e3114b3011e2c8174afeafd379ae509fdbd389c12ad6d681ca6f75bc7",
+          "url": "https://github.com/stefan-hoeck/idris2-array/archive/8f9c84bc71dae21c6fe430296c6a094f7706748c.tar.gz"
+        },
+        {
+          "ipkgs": [
+            "bytestring.ipkg"
+          ],
+          "name": "idris2-bytestring",
+          "sha256": "b2c74a34038bb35264587eef3279a9e750f356e25f16856b6da57401b07bf095",
+          "url": "https://github.com/stefan-hoeck/idris2-bytestring/archive/230d8577f02de22251786f128ec921078da4d880.tar.gz"
+        },
+        {
+          "ipkgs": [
+            "getopts.ipkg"
+          ],
+          "name": "idris2-getopts",
+          "sha256": "904ef2a23953856655e9e255345696932e9540ab5e24e43f448f18945034e7b9",
+          "url": "https://github.com/idris-community/idris2-getopts/archive/0d41b98f83f3707deb0ffbc595ef36b7d9cb9eab.tar.gz"
+        },
+        {
+          "ipkgs": [
+            "elab-util.ipkg"
+          ],
+          "name": "idris2-elab-util",
+          "sha256": "cd15b43d5e3bd0631649de8539174691302e29728740f8e29bab09928ef59bac",
+          "url": "https://github.com/stefan-hoeck/idris2-elab-util/archive/90a2363256cbaafd3b0cc4e2bf36003761b6c4f0.tar.gz"
+        },
+        {
+          "ipkgs": [
+            "refined.ipkg"
+          ],
+          "name": "idris2-refined",
+          "sha256": "a3bdc2fd25b09b9c1769d61ef8115f986c369540a7b0cdb2a72eb879d535a4de",
+          "url": "https://github.com/stefan-hoeck/idris2-refined/archive/02e43fa2b89076b4096c5f442bac7bea8814d552.tar.gz"
+        },
+        {
+          "ipkgs": [
+            "literal.ipkg"
+          ],
+          "name": "idris2-literal",
+          "sha256": "ce69894d3c8a75c681c738b87719bf0fd87ef6b72e53a72b92e789b3451d9057",
+          "url": "https://github.com/stefan-hoeck/idris2-literal/archive/f0fed86ae9bd5b13d98e4dd18103a6e1f7f7c6b4.tar.gz"
+        },
+        {
+          "ipkgs": [
+            "core/ilex-core.ipkg",
+            "ilex.ipkg",
+            "json/ilex-json.ipkg",
+            "toml/ilex-toml.ipkg"
+          ],
+          "name": "idris2-ilex",
+          "sha256": "15f2fcd092ac7f36b654da2569a7317207902a1057c53f81aa7ec40342edc6a8",
+          "url": "https://github.com/stefan-hoeck/idris2-ilex/archive/56098d3a15767e68eeafa081345ecf4159cdf8e5.tar.gz"
+        },
+        {
+          "ipkgs": [
+            "filepath.ipkg"
+          ],
+          "name": "idris2-filepath",
+          "sha256": "681105b67a528329c12bff59d4359c6b7d2906ad9f8935c1392057ec550d48a2",
+          "url": "https://github.com/stefan-hoeck/idris2-filepath/archive/4e8fe9af80d457adc63904ebf58e223ba35c62aa.tar.gz"
+        }
+      ],
+      "pack": {
+        "commit": "ebca311312b861ed18ac5db58b4044804fcbd103",
+        "sha256": "85af3db1e722704d1b907a658ed1bca25385126fc33b1014d5df9457b553f4c0"
+      },
+      "version": "2026.05.15"
+    },
+    "2026.05.20": {
+      "bottle": {
+        "cellar": "any",
+        "entries": [
+          {
+            "os": "arm64_sequoia",
+            "sha256": "c190be4f2f404fbdf27006b9581bb9ab88817de78faa68a268b1d89d476274a6"
+          },
+          {
+            "os": "arm64_sonoma",
+            "sha256": "af4889ea72909db56a01fd71a011fcfc2d552a878700f263d2476ba7279e4e65"
+          }
+        ],
+        "rebuild": 1,
+        "root_url": "https://github.com/Portfoligno/homebrew-idris/releases/download/idris2-pack-2026.05.20"
+      },
+      "collection": "collection",
+      "idris2": {
+        "commit": "6a54860ee748accc1a2be1da4a77727b5be4c1dc",
+        "sha256": "ed7ae919ea0bd24222bf9588480933847d0baffbc36c4b165a49206361594737"
+      },
+      "libraries": [
+        {
+          "ipkgs": [
+            "algebra.ipkg"
+          ],
+          "name": "idris2-algebra",
+          "sha256": "dfe2a3554ba2437c121f962dba2eaca1a2416803306910fc5a1d66283d47f034",
+          "url": "https://github.com/stefan-hoeck/idris2-algebra/archive/e279843a99fe250e2fcd928c774ddb6ffe36815b.tar.gz"
+        },
+        {
+          "ipkgs": [
+            "ref1.ipkg"
+          ],
+          "name": "idris2-ref1",
+          "sha256": "4d5318b8da9e167ff52cc5921f2ee82fce6c587e38edfeff61c6c8b1767d5905",
+          "url": "https://github.com/stefan-hoeck/idris2-ref1/archive/f5b771217295ee692080c08ce5627644c3f86c73.tar.gz"
+        },
+        {
+          "ipkgs": [
+            "array.ipkg"
+          ],
+          "name": "idris2-array",
+          "sha256": "c6ca326e3114b3011e2c8174afeafd379ae509fdbd389c12ad6d681ca6f75bc7",
+          "url": "https://github.com/stefan-hoeck/idris2-array/archive/8f9c84bc71dae21c6fe430296c6a094f7706748c.tar.gz"
+        },
+        {
+          "ipkgs": [
+            "bytestring.ipkg"
+          ],
+          "name": "idris2-bytestring",
+          "sha256": "b2c74a34038bb35264587eef3279a9e750f356e25f16856b6da57401b07bf095",
+          "url": "https://github.com/stefan-hoeck/idris2-bytestring/archive/230d8577f02de22251786f128ec921078da4d880.tar.gz"
+        },
+        {
+          "ipkgs": [
+            "getopts.ipkg"
+          ],
+          "name": "idris2-getopts",
+          "sha256": "904ef2a23953856655e9e255345696932e9540ab5e24e43f448f18945034e7b9",
+          "url": "https://github.com/idris-community/idris2-getopts/archive/0d41b98f83f3707deb0ffbc595ef36b7d9cb9eab.tar.gz"
+        },
+        {
+          "ipkgs": [
+            "elab-util.ipkg"
+          ],
+          "name": "idris2-elab-util",
+          "sha256": "cd15b43d5e3bd0631649de8539174691302e29728740f8e29bab09928ef59bac",
+          "url": "https://github.com/stefan-hoeck/idris2-elab-util/archive/90a2363256cbaafd3b0cc4e2bf36003761b6c4f0.tar.gz"
+        },
+        {
+          "ipkgs": [
+            "refined.ipkg"
+          ],
+          "name": "idris2-refined",
+          "sha256": "a3bdc2fd25b09b9c1769d61ef8115f986c369540a7b0cdb2a72eb879d535a4de",
+          "url": "https://github.com/stefan-hoeck/idris2-refined/archive/02e43fa2b89076b4096c5f442bac7bea8814d552.tar.gz"
+        },
+        {
+          "ipkgs": [
+            "literal.ipkg"
+          ],
+          "name": "idris2-literal",
+          "sha256": "ce69894d3c8a75c681c738b87719bf0fd87ef6b72e53a72b92e789b3451d9057",
+          "url": "https://github.com/stefan-hoeck/idris2-literal/archive/f0fed86ae9bd5b13d98e4dd18103a6e1f7f7c6b4.tar.gz"
+        },
+        {
+          "ipkgs": [
+            "core/ilex-core.ipkg",
+            "ilex.ipkg",
+            "json/ilex-json.ipkg",
+            "toml/ilex-toml.ipkg"
+          ],
+          "name": "idris2-ilex",
+          "sha256": "15f2fcd092ac7f36b654da2569a7317207902a1057c53f81aa7ec40342edc6a8",
+          "url": "https://github.com/stefan-hoeck/idris2-ilex/archive/56098d3a15767e68eeafa081345ecf4159cdf8e5.tar.gz"
+        },
+        {
+          "ipkgs": [
+            "filepath.ipkg"
+          ],
+          "name": "idris2-filepath",
+          "sha256": "681105b67a528329c12bff59d4359c6b7d2906ad9f8935c1392057ec550d48a2",
+          "url": "https://github.com/stefan-hoeck/idris2-filepath/archive/4e8fe9af80d457adc63904ebf58e223ba35c62aa.tar.gz"
+        }
+      ],
+      "pack": {
+        "commit": "ebca311312b861ed18ac5db58b4044804fcbd103",
+        "sha256": "85af3db1e722704d1b907a658ed1bca25385126fc33b1014d5df9457b553f4c0"
+      },
+      "version": "2026.05.20"
+    },
+    "2026.05.21": {
+      "bottle": {
+        "cellar": "any",
+        "entries": [
+          {
+            "os": "arm64_sequoia",
+            "sha256": "f8ee907bcb7807f686d0c3c144151b4a82cbd95413480f9e2343cd88dd82caf2"
+          },
+          {
+            "os": "arm64_sonoma",
+            "sha256": "773222525fce2dc34b184722be540977eeec1d13da20bc4ee534cd4233d806b5"
+          }
+        ],
+        "rebuild": 1,
+        "root_url": "https://github.com/Portfoligno/homebrew-idris/releases/download/idris2-pack-2026.05.21"
+      },
+      "collection": "collection",
+      "idris2": {
+        "commit": "6a54860ee748accc1a2be1da4a77727b5be4c1dc",
+        "sha256": "ed7ae919ea0bd24222bf9588480933847d0baffbc36c4b165a49206361594737"
+      },
+      "libraries": [
+        {
+          "ipkgs": [
+            "algebra.ipkg"
+          ],
+          "name": "idris2-algebra",
+          "sha256": "dfe2a3554ba2437c121f962dba2eaca1a2416803306910fc5a1d66283d47f034",
+          "url": "https://github.com/stefan-hoeck/idris2-algebra/archive/e279843a99fe250e2fcd928c774ddb6ffe36815b.tar.gz"
+        },
+        {
+          "ipkgs": [
+            "ref1.ipkg"
+          ],
+          "name": "idris2-ref1",
+          "sha256": "4d5318b8da9e167ff52cc5921f2ee82fce6c587e38edfeff61c6c8b1767d5905",
+          "url": "https://github.com/stefan-hoeck/idris2-ref1/archive/f5b771217295ee692080c08ce5627644c3f86c73.tar.gz"
+        },
+        {
+          "ipkgs": [
+            "array.ipkg"
+          ],
+          "name": "idris2-array",
+          "sha256": "c6ca326e3114b3011e2c8174afeafd379ae509fdbd389c12ad6d681ca6f75bc7",
+          "url": "https://github.com/stefan-hoeck/idris2-array/archive/8f9c84bc71dae21c6fe430296c6a094f7706748c.tar.gz"
+        },
+        {
+          "ipkgs": [
+            "bytestring.ipkg"
+          ],
+          "name": "idris2-bytestring",
+          "sha256": "b2c74a34038bb35264587eef3279a9e750f356e25f16856b6da57401b07bf095",
+          "url": "https://github.com/stefan-hoeck/idris2-bytestring/archive/230d8577f02de22251786f128ec921078da4d880.tar.gz"
+        },
+        {
+          "ipkgs": [
+            "getopts.ipkg"
+          ],
+          "name": "idris2-getopts",
+          "sha256": "904ef2a23953856655e9e255345696932e9540ab5e24e43f448f18945034e7b9",
+          "url": "https://github.com/idris-community/idris2-getopts/archive/0d41b98f83f3707deb0ffbc595ef36b7d9cb9eab.tar.gz"
+        },
+        {
+          "ipkgs": [
+            "elab-util.ipkg"
+          ],
+          "name": "idris2-elab-util",
+          "sha256": "cd15b43d5e3bd0631649de8539174691302e29728740f8e29bab09928ef59bac",
+          "url": "https://github.com/stefan-hoeck/idris2-elab-util/archive/90a2363256cbaafd3b0cc4e2bf36003761b6c4f0.tar.gz"
+        },
+        {
+          "ipkgs": [
+            "refined.ipkg"
+          ],
+          "name": "idris2-refined",
+          "sha256": "a3bdc2fd25b09b9c1769d61ef8115f986c369540a7b0cdb2a72eb879d535a4de",
+          "url": "https://github.com/stefan-hoeck/idris2-refined/archive/02e43fa2b89076b4096c5f442bac7bea8814d552.tar.gz"
+        },
+        {
+          "ipkgs": [
+            "literal.ipkg"
+          ],
+          "name": "idris2-literal",
+          "sha256": "ce69894d3c8a75c681c738b87719bf0fd87ef6b72e53a72b92e789b3451d9057",
+          "url": "https://github.com/stefan-hoeck/idris2-literal/archive/f0fed86ae9bd5b13d98e4dd18103a6e1f7f7c6b4.tar.gz"
+        },
+        {
+          "ipkgs": [
+            "core/ilex-core.ipkg",
+            "ilex.ipkg",
+            "json/ilex-json.ipkg",
+            "toml/ilex-toml.ipkg"
+          ],
+          "name": "idris2-ilex",
+          "sha256": "15f2fcd092ac7f36b654da2569a7317207902a1057c53f81aa7ec40342edc6a8",
+          "url": "https://github.com/stefan-hoeck/idris2-ilex/archive/56098d3a15767e68eeafa081345ecf4159cdf8e5.tar.gz"
+        },
+        {
+          "ipkgs": [
+            "filepath.ipkg"
+          ],
+          "name": "idris2-filepath",
+          "sha256": "681105b67a528329c12bff59d4359c6b7d2906ad9f8935c1392057ec550d48a2",
+          "url": "https://github.com/stefan-hoeck/idris2-filepath/archive/4e8fe9af80d457adc63904ebf58e223ba35c62aa.tar.gz"
+        }
+      ],
+      "pack": {
+        "commit": "ebca311312b861ed18ac5db58b4044804fcbd103",
+        "sha256": "85af3db1e722704d1b907a658ed1bca25385126fc33b1014d5df9457b553f4c0"
+      },
+      "version": "2026.05.21"
+    },
+    "2026.05.22": {
+      "bottle": {
+        "cellar": "any",
+        "entries": [
+          {
+            "os": "arm64_sequoia",
+            "sha256": "994f04b3812d8a89c1f4c09d42e103769632ec817c1222f5777c2299ed5832ac"
+          },
+          {
+            "os": "arm64_sonoma",
+            "sha256": "fefc9ae206657d19c263f2e928fc5544325821b683ee3b07d6df31405c869c6f"
+          }
+        ],
+        "rebuild": 1,
+        "root_url": "https://github.com/Portfoligno/homebrew-idris/releases/download/idris2-pack-2026.05.22"
+      },
+      "collection": "collection",
+      "idris2": {
+        "commit": "6a54860ee748accc1a2be1da4a77727b5be4c1dc",
+        "sha256": "ed7ae919ea0bd24222bf9588480933847d0baffbc36c4b165a49206361594737"
+      },
+      "libraries": [
+        {
+          "ipkgs": [
+            "algebra.ipkg"
+          ],
+          "name": "idris2-algebra",
+          "sha256": "dfe2a3554ba2437c121f962dba2eaca1a2416803306910fc5a1d66283d47f034",
+          "url": "https://github.com/stefan-hoeck/idris2-algebra/archive/e279843a99fe250e2fcd928c774ddb6ffe36815b.tar.gz"
+        },
+        {
+          "ipkgs": [
+            "ref1.ipkg"
+          ],
+          "name": "idris2-ref1",
+          "sha256": "4d5318b8da9e167ff52cc5921f2ee82fce6c587e38edfeff61c6c8b1767d5905",
+          "url": "https://github.com/stefan-hoeck/idris2-ref1/archive/f5b771217295ee692080c08ce5627644c3f86c73.tar.gz"
+        },
+        {
+          "ipkgs": [
+            "array.ipkg"
+          ],
+          "name": "idris2-array",
+          "sha256": "c6ca326e3114b3011e2c8174afeafd379ae509fdbd389c12ad6d681ca6f75bc7",
+          "url": "https://github.com/stefan-hoeck/idris2-array/archive/8f9c84bc71dae21c6fe430296c6a094f7706748c.tar.gz"
+        },
+        {
+          "ipkgs": [
+            "bytestring.ipkg"
+          ],
+          "name": "idris2-bytestring",
+          "sha256": "b2c74a34038bb35264587eef3279a9e750f356e25f16856b6da57401b07bf095",
+          "url": "https://github.com/stefan-hoeck/idris2-bytestring/archive/230d8577f02de22251786f128ec921078da4d880.tar.gz"
+        },
+        {
+          "ipkgs": [
+            "getopts.ipkg"
+          ],
+          "name": "idris2-getopts",
+          "sha256": "904ef2a23953856655e9e255345696932e9540ab5e24e43f448f18945034e7b9",
+          "url": "https://github.com/idris-community/idris2-getopts/archive/0d41b98f83f3707deb0ffbc595ef36b7d9cb9eab.tar.gz"
+        },
+        {
+          "ipkgs": [
+            "elab-util.ipkg"
+          ],
+          "name": "idris2-elab-util",
+          "sha256": "cd15b43d5e3bd0631649de8539174691302e29728740f8e29bab09928ef59bac",
+          "url": "https://github.com/stefan-hoeck/idris2-elab-util/archive/90a2363256cbaafd3b0cc4e2bf36003761b6c4f0.tar.gz"
+        },
+        {
+          "ipkgs": [
+            "refined.ipkg"
+          ],
+          "name": "idris2-refined",
+          "sha256": "a3bdc2fd25b09b9c1769d61ef8115f986c369540a7b0cdb2a72eb879d535a4de",
+          "url": "https://github.com/stefan-hoeck/idris2-refined/archive/02e43fa2b89076b4096c5f442bac7bea8814d552.tar.gz"
+        },
+        {
+          "ipkgs": [
+            "literal.ipkg"
+          ],
+          "name": "idris2-literal",
+          "sha256": "ce69894d3c8a75c681c738b87719bf0fd87ef6b72e53a72b92e789b3451d9057",
+          "url": "https://github.com/stefan-hoeck/idris2-literal/archive/f0fed86ae9bd5b13d98e4dd18103a6e1f7f7c6b4.tar.gz"
+        },
+        {
+          "ipkgs": [
+            "core/ilex-core.ipkg",
+            "ilex.ipkg",
+            "json/ilex-json.ipkg",
+            "toml/ilex-toml.ipkg"
+          ],
+          "name": "idris2-ilex",
+          "sha256": "15f2fcd092ac7f36b654da2569a7317207902a1057c53f81aa7ec40342edc6a8",
+          "url": "https://github.com/stefan-hoeck/idris2-ilex/archive/56098d3a15767e68eeafa081345ecf4159cdf8e5.tar.gz"
+        },
+        {
+          "ipkgs": [
+            "filepath.ipkg"
+          ],
+          "name": "idris2-filepath",
+          "sha256": "681105b67a528329c12bff59d4359c6b7d2906ad9f8935c1392057ec550d48a2",
+          "url": "https://github.com/stefan-hoeck/idris2-filepath/archive/4e8fe9af80d457adc63904ebf58e223ba35c62aa.tar.gz"
+        }
+      ],
+      "pack": {
+        "commit": "ebca311312b861ed18ac5db58b4044804fcbd103",
+        "sha256": "85af3db1e722704d1b907a658ed1bca25385126fc33b1014d5df9457b553f4c0"
+      },
+      "version": "2026.05.22"
+    },
+    "2026.05.23": {
+      "bottle": {
+        "cellar": "any",
+        "entries": [
+          {
+            "os": "arm64_sequoia",
+            "sha256": "005d9c2599cb4263e242b893c8a13d7772fd8f960dd4c75fe56fd7ca9ec23a16"
+          },
+          {
+            "os": "arm64_sonoma",
+            "sha256": "185afca39d6a802f0db42595ed947e334d258a59b3b4e6c2764146d02abc424c"
+          }
+        ],
+        "rebuild": 1,
+        "root_url": "https://github.com/Portfoligno/homebrew-idris/releases/download/idris2-pack-2026.05.23"
+      },
+      "collection": "collection",
+      "idris2": {
+        "commit": "6a54860ee748accc1a2be1da4a77727b5be4c1dc",
+        "sha256": "ed7ae919ea0bd24222bf9588480933847d0baffbc36c4b165a49206361594737"
+      },
+      "libraries": [
+        {
+          "ipkgs": [
+            "algebra.ipkg"
+          ],
+          "name": "idris2-algebra",
+          "sha256": "dfe2a3554ba2437c121f962dba2eaca1a2416803306910fc5a1d66283d47f034",
+          "url": "https://github.com/stefan-hoeck/idris2-algebra/archive/e279843a99fe250e2fcd928c774ddb6ffe36815b.tar.gz"
+        },
+        {
+          "ipkgs": [
+            "ref1.ipkg"
+          ],
+          "name": "idris2-ref1",
+          "sha256": "4d5318b8da9e167ff52cc5921f2ee82fce6c587e38edfeff61c6c8b1767d5905",
+          "url": "https://github.com/stefan-hoeck/idris2-ref1/archive/f5b771217295ee692080c08ce5627644c3f86c73.tar.gz"
+        },
+        {
+          "ipkgs": [
+            "array.ipkg"
+          ],
+          "name": "idris2-array",
+          "sha256": "c6ca326e3114b3011e2c8174afeafd379ae509fdbd389c12ad6d681ca6f75bc7",
+          "url": "https://github.com/stefan-hoeck/idris2-array/archive/8f9c84bc71dae21c6fe430296c6a094f7706748c.tar.gz"
+        },
+        {
+          "ipkgs": [
+            "bytestring.ipkg"
+          ],
+          "name": "idris2-bytestring",
+          "sha256": "b2c74a34038bb35264587eef3279a9e750f356e25f16856b6da57401b07bf095",
+          "url": "https://github.com/stefan-hoeck/idris2-bytestring/archive/230d8577f02de22251786f128ec921078da4d880.tar.gz"
+        },
+        {
+          "ipkgs": [
+            "getopts.ipkg"
+          ],
+          "name": "idris2-getopts",
+          "sha256": "904ef2a23953856655e9e255345696932e9540ab5e24e43f448f18945034e7b9",
+          "url": "https://github.com/idris-community/idris2-getopts/archive/0d41b98f83f3707deb0ffbc595ef36b7d9cb9eab.tar.gz"
+        },
+        {
+          "ipkgs": [
+            "elab-util.ipkg"
+          ],
+          "name": "idris2-elab-util",
+          "sha256": "cd15b43d5e3bd0631649de8539174691302e29728740f8e29bab09928ef59bac",
+          "url": "https://github.com/stefan-hoeck/idris2-elab-util/archive/90a2363256cbaafd3b0cc4e2bf36003761b6c4f0.tar.gz"
+        },
+        {
+          "ipkgs": [
+            "refined.ipkg"
+          ],
+          "name": "idris2-refined",
+          "sha256": "a3bdc2fd25b09b9c1769d61ef8115f986c369540a7b0cdb2a72eb879d535a4de",
+          "url": "https://github.com/stefan-hoeck/idris2-refined/archive/02e43fa2b89076b4096c5f442bac7bea8814d552.tar.gz"
+        },
+        {
+          "ipkgs": [
+            "literal.ipkg"
+          ],
+          "name": "idris2-literal",
+          "sha256": "ce69894d3c8a75c681c738b87719bf0fd87ef6b72e53a72b92e789b3451d9057",
+          "url": "https://github.com/stefan-hoeck/idris2-literal/archive/f0fed86ae9bd5b13d98e4dd18103a6e1f7f7c6b4.tar.gz"
+        },
+        {
+          "ipkgs": [
+            "core/ilex-core.ipkg",
+            "ilex.ipkg",
+            "json/ilex-json.ipkg",
+            "toml/ilex-toml.ipkg"
+          ],
+          "name": "idris2-ilex",
+          "sha256": "15f2fcd092ac7f36b654da2569a7317207902a1057c53f81aa7ec40342edc6a8",
+          "url": "https://github.com/stefan-hoeck/idris2-ilex/archive/56098d3a15767e68eeafa081345ecf4159cdf8e5.tar.gz"
+        },
+        {
+          "ipkgs": [
+            "filepath.ipkg"
+          ],
+          "name": "idris2-filepath",
+          "sha256": "681105b67a528329c12bff59d4359c6b7d2906ad9f8935c1392057ec550d48a2",
+          "url": "https://github.com/stefan-hoeck/idris2-filepath/archive/4e8fe9af80d457adc63904ebf58e223ba35c62aa.tar.gz"
+        }
+      ],
+      "pack": {
+        "commit": "ebca311312b861ed18ac5db58b4044804fcbd103",
+        "sha256": "85af3db1e722704d1b907a658ed1bca25385126fc33b1014d5df9457b553f4c0"
+      },
+      "version": "2026.05.23"
+    },
+    "2026.05.24": {
+      "bottle": {
+        "cellar": "any",
+        "entries": [
+          {
+            "os": "arm64_sequoia",
+            "sha256": "c00709e6c655d55eac41268aa091861b9ac8259e016c3df199af884f5c0ab633"
+          },
+          {
+            "os": "arm64_sonoma",
+            "sha256": "c50b3cad638d0957a52ce5230991eb599080c65fba8bb260ebb099829fe824a2"
+          }
+        ],
+        "rebuild": 1,
+        "root_url": "https://github.com/Portfoligno/homebrew-idris/releases/download/idris2-pack-2026.05.24"
+      },
+      "collection": "collection",
+      "idris2": {
+        "commit": "6a54860ee748accc1a2be1da4a77727b5be4c1dc",
+        "sha256": "ed7ae919ea0bd24222bf9588480933847d0baffbc36c4b165a49206361594737"
+      },
+      "libraries": [
+        {
+          "ipkgs": [
+            "algebra.ipkg"
+          ],
+          "name": "idris2-algebra",
+          "sha256": "dfe2a3554ba2437c121f962dba2eaca1a2416803306910fc5a1d66283d47f034",
+          "url": "https://github.com/stefan-hoeck/idris2-algebra/archive/e279843a99fe250e2fcd928c774ddb6ffe36815b.tar.gz"
+        },
+        {
+          "ipkgs": [
+            "ref1.ipkg"
+          ],
+          "name": "idris2-ref1",
+          "sha256": "4d5318b8da9e167ff52cc5921f2ee82fce6c587e38edfeff61c6c8b1767d5905",
+          "url": "https://github.com/stefan-hoeck/idris2-ref1/archive/f5b771217295ee692080c08ce5627644c3f86c73.tar.gz"
+        },
+        {
+          "ipkgs": [
+            "array.ipkg"
+          ],
+          "name": "idris2-array",
+          "sha256": "c6ca326e3114b3011e2c8174afeafd379ae509fdbd389c12ad6d681ca6f75bc7",
+          "url": "https://github.com/stefan-hoeck/idris2-array/archive/8f9c84bc71dae21c6fe430296c6a094f7706748c.tar.gz"
+        },
+        {
+          "ipkgs": [
+            "bytestring.ipkg"
+          ],
+          "name": "idris2-bytestring",
+          "sha256": "b2c74a34038bb35264587eef3279a9e750f356e25f16856b6da57401b07bf095",
+          "url": "https://github.com/stefan-hoeck/idris2-bytestring/archive/230d8577f02de22251786f128ec921078da4d880.tar.gz"
+        },
+        {
+          "ipkgs": [
+            "getopts.ipkg"
+          ],
+          "name": "idris2-getopts",
+          "sha256": "904ef2a23953856655e9e255345696932e9540ab5e24e43f448f18945034e7b9",
+          "url": "https://github.com/idris-community/idris2-getopts/archive/0d41b98f83f3707deb0ffbc595ef36b7d9cb9eab.tar.gz"
+        },
+        {
+          "ipkgs": [
+            "elab-util.ipkg"
+          ],
+          "name": "idris2-elab-util",
+          "sha256": "cd15b43d5e3bd0631649de8539174691302e29728740f8e29bab09928ef59bac",
+          "url": "https://github.com/stefan-hoeck/idris2-elab-util/archive/90a2363256cbaafd3b0cc4e2bf36003761b6c4f0.tar.gz"
+        },
+        {
+          "ipkgs": [
+            "refined.ipkg"
+          ],
+          "name": "idris2-refined",
+          "sha256": "a3bdc2fd25b09b9c1769d61ef8115f986c369540a7b0cdb2a72eb879d535a4de",
+          "url": "https://github.com/stefan-hoeck/idris2-refined/archive/02e43fa2b89076b4096c5f442bac7bea8814d552.tar.gz"
+        },
+        {
+          "ipkgs": [
+            "literal.ipkg"
+          ],
+          "name": "idris2-literal",
+          "sha256": "ce69894d3c8a75c681c738b87719bf0fd87ef6b72e53a72b92e789b3451d9057",
+          "url": "https://github.com/stefan-hoeck/idris2-literal/archive/f0fed86ae9bd5b13d98e4dd18103a6e1f7f7c6b4.tar.gz"
+        },
+        {
+          "ipkgs": [
+            "core/ilex-core.ipkg",
+            "ilex.ipkg",
+            "json/ilex-json.ipkg",
+            "toml/ilex-toml.ipkg"
+          ],
+          "name": "idris2-ilex",
+          "sha256": "15f2fcd092ac7f36b654da2569a7317207902a1057c53f81aa7ec40342edc6a8",
+          "url": "https://github.com/stefan-hoeck/idris2-ilex/archive/56098d3a15767e68eeafa081345ecf4159cdf8e5.tar.gz"
+        },
+        {
+          "ipkgs": [
+            "filepath.ipkg"
+          ],
+          "name": "idris2-filepath",
+          "sha256": "681105b67a528329c12bff59d4359c6b7d2906ad9f8935c1392057ec550d48a2",
+          "url": "https://github.com/stefan-hoeck/idris2-filepath/archive/4e8fe9af80d457adc63904ebf58e223ba35c62aa.tar.gz"
+        }
+      ],
+      "pack": {
+        "commit": "ebca311312b861ed18ac5db58b4044804fcbd103",
+        "sha256": "85af3db1e722704d1b907a658ed1bca25385126fc33b1014d5df9457b553f4c0"
+      },
+      "version": "2026.05.24"
+    },
+    "2026.05.25": {
+      "bottle": {
+        "cellar": "any",
+        "entries": [
+          {
+            "os": "arm64_sequoia",
+            "sha256": "57813981a5dc433149af6cc4951a138419649948c444fbb302c8e0020ddf8486"
+          },
+          {
+            "os": "arm64_sonoma",
+            "sha256": "1860afb7851fbffc84f40014f519588069b828e4e61090faf1fea6d74aee56a4"
+          }
+        ],
+        "rebuild": 1,
+        "root_url": "https://github.com/Portfoligno/homebrew-idris/releases/download/idris2-pack-2026.05.25"
+      },
+      "collection": "collection",
+      "idris2": {
+        "commit": "6a54860ee748accc1a2be1da4a77727b5be4c1dc",
+        "sha256": "ed7ae919ea0bd24222bf9588480933847d0baffbc36c4b165a49206361594737"
+      },
+      "libraries": [
+        {
+          "ipkgs": [
+            "algebra.ipkg"
+          ],
+          "name": "idris2-algebra",
+          "sha256": "dfe2a3554ba2437c121f962dba2eaca1a2416803306910fc5a1d66283d47f034",
+          "url": "https://github.com/stefan-hoeck/idris2-algebra/archive/e279843a99fe250e2fcd928c774ddb6ffe36815b.tar.gz"
+        },
+        {
+          "ipkgs": [
+            "ref1.ipkg"
+          ],
+          "name": "idris2-ref1",
+          "sha256": "4d5318b8da9e167ff52cc5921f2ee82fce6c587e38edfeff61c6c8b1767d5905",
+          "url": "https://github.com/stefan-hoeck/idris2-ref1/archive/f5b771217295ee692080c08ce5627644c3f86c73.tar.gz"
+        },
+        {
+          "ipkgs": [
+            "array.ipkg"
+          ],
+          "name": "idris2-array",
+          "sha256": "c6ca326e3114b3011e2c8174afeafd379ae509fdbd389c12ad6d681ca6f75bc7",
+          "url": "https://github.com/stefan-hoeck/idris2-array/archive/8f9c84bc71dae21c6fe430296c6a094f7706748c.tar.gz"
+        },
+        {
+          "ipkgs": [
+            "bytestring.ipkg"
+          ],
+          "name": "idris2-bytestring",
+          "sha256": "b2c74a34038bb35264587eef3279a9e750f356e25f16856b6da57401b07bf095",
+          "url": "https://github.com/stefan-hoeck/idris2-bytestring/archive/230d8577f02de22251786f128ec921078da4d880.tar.gz"
+        },
+        {
+          "ipkgs": [
+            "getopts.ipkg"
+          ],
+          "name": "idris2-getopts",
+          "sha256": "904ef2a23953856655e9e255345696932e9540ab5e24e43f448f18945034e7b9",
+          "url": "https://github.com/idris-community/idris2-getopts/archive/0d41b98f83f3707deb0ffbc595ef36b7d9cb9eab.tar.gz"
+        },
+        {
+          "ipkgs": [
+            "elab-util.ipkg"
+          ],
+          "name": "idris2-elab-util",
+          "sha256": "cd15b43d5e3bd0631649de8539174691302e29728740f8e29bab09928ef59bac",
+          "url": "https://github.com/stefan-hoeck/idris2-elab-util/archive/90a2363256cbaafd3b0cc4e2bf36003761b6c4f0.tar.gz"
+        },
+        {
+          "ipkgs": [
+            "refined.ipkg"
+          ],
+          "name": "idris2-refined",
+          "sha256": "a3bdc2fd25b09b9c1769d61ef8115f986c369540a7b0cdb2a72eb879d535a4de",
+          "url": "https://github.com/stefan-hoeck/idris2-refined/archive/02e43fa2b89076b4096c5f442bac7bea8814d552.tar.gz"
+        },
+        {
+          "ipkgs": [
+            "literal.ipkg"
+          ],
+          "name": "idris2-literal",
+          "sha256": "ce69894d3c8a75c681c738b87719bf0fd87ef6b72e53a72b92e789b3451d9057",
+          "url": "https://github.com/stefan-hoeck/idris2-literal/archive/f0fed86ae9bd5b13d98e4dd18103a6e1f7f7c6b4.tar.gz"
+        },
+        {
+          "ipkgs": [
+            "core/ilex-core.ipkg",
+            "ilex.ipkg",
+            "json/ilex-json.ipkg",
+            "toml/ilex-toml.ipkg"
+          ],
+          "name": "idris2-ilex",
+          "sha256": "15f2fcd092ac7f36b654da2569a7317207902a1057c53f81aa7ec40342edc6a8",
+          "url": "https://github.com/stefan-hoeck/idris2-ilex/archive/56098d3a15767e68eeafa081345ecf4159cdf8e5.tar.gz"
+        },
+        {
+          "ipkgs": [
+            "filepath.ipkg"
+          ],
+          "name": "idris2-filepath",
+          "sha256": "681105b67a528329c12bff59d4359c6b7d2906ad9f8935c1392057ec550d48a2",
+          "url": "https://github.com/stefan-hoeck/idris2-filepath/archive/4e8fe9af80d457adc63904ebf58e223ba35c62aa.tar.gz"
+        }
+      ],
+      "pack": {
+        "commit": "ebca311312b861ed18ac5db58b4044804fcbd103",
+        "sha256": "85af3db1e722704d1b907a658ed1bca25385126fc33b1014d5df9457b553f4c0"
+      },
+      "version": "2026.05.25"
+    },
+    "2026.05.29": {
+      "bottle": {
+        "cellar": "any",
+        "entries": [
+          {
+            "os": "arm64_sequoia",
+            "sha256": "544bf3101fee2a7a42fb29e585ba04801c337b2433bde566328310f0baf8eb53"
+          },
+          {
+            "os": "arm64_sonoma",
+            "sha256": "dc090d0c8bc2c133ab9a7cda72d0b5098396e593e0b12ad90728a7208f8cd2d7"
+          }
+        ],
+        "rebuild": 1,
+        "root_url": "https://github.com/Portfoligno/homebrew-idris/releases/download/idris2-pack-2026.05.29"
+      },
+      "collection": "nightly-260529",
+      "idris2": {
+        "commit": "a286fcadb237ba21e0a49f76d154e77387827e58",
+        "sha256": "6ca78e197869734bf3a5a7b14fd0e7a774645ce3460a447f190d9c7756e0a60f"
+      },
+      "libraries": [
+        {
+          "ipkgs": [
+            "algebra.ipkg"
+          ],
+          "name": "idris2-algebra",
+          "sha256": "dfe2a3554ba2437c121f962dba2eaca1a2416803306910fc5a1d66283d47f034",
+          "url": "https://github.com/stefan-hoeck/idris2-algebra/archive/e279843a99fe250e2fcd928c774ddb6ffe36815b.tar.gz"
+        },
+        {
+          "ipkgs": [
+            "ref1.ipkg"
+          ],
+          "name": "idris2-ref1",
+          "sha256": "4d5318b8da9e167ff52cc5921f2ee82fce6c587e38edfeff61c6c8b1767d5905",
+          "url": "https://github.com/stefan-hoeck/idris2-ref1/archive/f5b771217295ee692080c08ce5627644c3f86c73.tar.gz"
+        },
+        {
+          "ipkgs": [
+            "array.ipkg"
+          ],
+          "name": "idris2-array",
+          "sha256": "c6ca326e3114b3011e2c8174afeafd379ae509fdbd389c12ad6d681ca6f75bc7",
+          "url": "https://github.com/stefan-hoeck/idris2-array/archive/8f9c84bc71dae21c6fe430296c6a094f7706748c.tar.gz"
+        },
+        {
+          "ipkgs": [
+            "bytestring.ipkg"
+          ],
+          "name": "idris2-bytestring",
+          "sha256": "b2c74a34038bb35264587eef3279a9e750f356e25f16856b6da57401b07bf095",
+          "url": "https://github.com/stefan-hoeck/idris2-bytestring/archive/230d8577f02de22251786f128ec921078da4d880.tar.gz"
+        },
+        {
+          "ipkgs": [
+            "elab-util.ipkg"
+          ],
+          "name": "idris2-elab-util",
+          "sha256": "cd15b43d5e3bd0631649de8539174691302e29728740f8e29bab09928ef59bac",
+          "url": "https://github.com/stefan-hoeck/idris2-elab-util/archive/90a2363256cbaafd3b0cc4e2bf36003761b6c4f0.tar.gz"
+        },
+        {
+          "ipkgs": [
+            "getopts.ipkg"
+          ],
+          "name": "idris2-getopts",
+          "sha256": "904ef2a23953856655e9e255345696932e9540ab5e24e43f448f18945034e7b9",
+          "url": "https://github.com/idris-community/idris2-getopts/archive/0d41b98f83f3707deb0ffbc595ef36b7d9cb9eab.tar.gz"
+        },
+        {
+          "ipkgs": [
+            "filepath.ipkg"
+          ],
+          "name": "idris2-filepath",
+          "sha256": "681105b67a528329c12bff59d4359c6b7d2906ad9f8935c1392057ec550d48a2",
+          "url": "https://github.com/stefan-hoeck/idris2-filepath/archive/4e8fe9af80d457adc63904ebf58e223ba35c62aa.tar.gz"
+        },
+        {
+          "ipkgs": [
+            "refined.ipkg"
+          ],
+          "name": "idris2-refined",
+          "sha256": "a3bdc2fd25b09b9c1769d61ef8115f986c369540a7b0cdb2a72eb879d535a4de",
+          "url": "https://github.com/stefan-hoeck/idris2-refined/archive/02e43fa2b89076b4096c5f442bac7bea8814d552.tar.gz"
+        },
+        {
+          "ipkgs": [
+            "core/ilex-core.ipkg",
+            "ilex.ipkg",
+            "toml/ilex-toml.ipkg"
+          ],
+          "name": "idris2-ilex",
+          "sha256": "15f2fcd092ac7f36b654da2569a7317207902a1057c53f81aa7ec40342edc6a8",
+          "url": "https://github.com/stefan-hoeck/idris2-ilex/archive/56098d3a15767e68eeafa081345ecf4159cdf8e5.tar.gz"
+        }
+      ],
+      "pack": {
+        "commit": "ebca311312b861ed18ac5db58b4044804fcbd103",
+        "sha256": "85af3db1e722704d1b907a658ed1bca25385126fc33b1014d5df9457b553f4c0"
+      },
+      "version": "2026.05.29"
+    },
+    "2026.06.05": {
+      "bottle": {
+        "cellar": "any",
+        "entries": [
+          {
+            "os": "arm64_sequoia",
+            "sha256": "a927e7960bf833d7d6354cc9279486605525f8799b1d8e092b69878a88cfcb96"
+          },
+          {
+            "os": "arm64_sonoma",
+            "sha256": "de6f0d92d3ca920b778d0f1f0dd0ce321d2e0586fe891c237012af1ad188adf0"
+          }
+        ],
+        "rebuild": 0,
+        "root_url": "https://github.com/Portfoligno/homebrew-idris/releases/download/idris2-pack-2026.06.05"
+      },
+      "collection": "nightly-260605",
+      "idris2": {
+        "commit": "b2d2cf40dae03d28a873454979fa86093781eb97",
+        "sha256": "9fb1d6644f73ef8474470bd9a16a393a35e36754d39951c87246295dadd4ef78"
+      },
+      "libraries": [
+        {
+          "ipkgs": [
+            "algebra.ipkg"
+          ],
+          "name": "idris2-algebra",
+          "sha256": "d57a07e34ded0ad308b81f9ff4edc6633b9afe0263641bab4e3e9d8e0c466e0b",
+          "url": "https://github.com/stefan-hoeck/idris2-algebra/archive/b80241edadc9237c2663df098c27e6dbc99886d0.tar.gz"
+        },
+        {
+          "ipkgs": [
+            "ref1.ipkg"
+          ],
+          "name": "idris2-ref1",
+          "sha256": "4d5318b8da9e167ff52cc5921f2ee82fce6c587e38edfeff61c6c8b1767d5905",
+          "url": "https://github.com/stefan-hoeck/idris2-ref1/archive/f5b771217295ee692080c08ce5627644c3f86c73.tar.gz"
+        },
+        {
+          "ipkgs": [
+            "array.ipkg"
+          ],
+          "name": "idris2-array",
+          "sha256": "43155e6d17b05dbd7aec4bf9483f374b836e683bedad4aa76df118e0dd0b3e6d",
+          "url": "https://github.com/stefan-hoeck/idris2-array/archive/7cca4fe58f28436b73f077e836c09fce091da4e9.tar.gz"
+        },
+        {
+          "ipkgs": [
+            "bytestring.ipkg"
+          ],
+          "name": "idris2-bytestring",
+          "sha256": "b2c74a34038bb35264587eef3279a9e750f356e25f16856b6da57401b07bf095",
+          "url": "https://github.com/stefan-hoeck/idris2-bytestring/archive/230d8577f02de22251786f128ec921078da4d880.tar.gz"
+        },
+        {
+          "ipkgs": [
+            "elab-util.ipkg"
+          ],
+          "name": "idris2-elab-util",
+          "sha256": "cd15b43d5e3bd0631649de8539174691302e29728740f8e29bab09928ef59bac",
+          "url": "https://github.com/stefan-hoeck/idris2-elab-util/archive/90a2363256cbaafd3b0cc4e2bf36003761b6c4f0.tar.gz"
+        },
+        {
+          "ipkgs": [
+            "getopts.ipkg"
+          ],
+          "name": "idris2-getopts",
+          "sha256": "904ef2a23953856655e9e255345696932e9540ab5e24e43f448f18945034e7b9",
+          "url": "https://github.com/idris-community/idris2-getopts/archive/0d41b98f83f3707deb0ffbc595ef36b7d9cb9eab.tar.gz"
+        },
+        {
+          "ipkgs": [
+            "filepath.ipkg"
+          ],
+          "name": "idris2-filepath",
+          "sha256": "681105b67a528329c12bff59d4359c6b7d2906ad9f8935c1392057ec550d48a2",
+          "url": "https://github.com/stefan-hoeck/idris2-filepath/archive/4e8fe9af80d457adc63904ebf58e223ba35c62aa.tar.gz"
+        },
+        {
+          "ipkgs": [
+            "refined.ipkg"
+          ],
+          "name": "idris2-refined",
+          "sha256": "8f6a3bab552797f4a04d3cde9658f1be3a540dd13345b63f82b6e18fafda73a7",
+          "url": "https://github.com/stefan-hoeck/idris2-refined/archive/7ad095dc89232cfa667e47ae507b13f132837fdd.tar.gz"
+        },
+        {
+          "ipkgs": [
+            "core/ilex-core.ipkg",
+            "ilex.ipkg",
+            "toml/ilex-toml.ipkg"
+          ],
+          "name": "idris2-ilex",
+          "sha256": "214250e1fa0f8253d20d64359896a98727159921cc5d60edf7bdb27e80404b5e",
+          "url": "https://github.com/stefan-hoeck/idris2-ilex/archive/4a7390f2dab7a70a3dc697f63137fd5424d25c57.tar.gz"
+        }
+      ],
+      "pack": {
+        "commit": "ebca311312b861ed18ac5db58b4044804fcbd103",
+        "sha256": "85af3db1e722704d1b907a658ed1bca25385126fc33b1014d5df9457b553f4c0"
+      },
+      "version": "2026.06.05"
+    }
+  }
+}

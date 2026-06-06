@@ -1,0 +1,60 @@
+name: Materializer gate
+on:
+  pull_request:
+    paths:
+      - scripts/idris2-pack-materialize.idr
+      - scripts/check-materializer.hell
+      - Formula/idris2-pack.rb.erb
+      - cmd/brew-idris2-pack-pin
+  push:
+    branches:
+      - main
+    paths:
+      - scripts/idris2-pack-materialize.idr
+      - scripts/check-materializer.hell
+      - Formula/idris2-pack.rb.erb
+      - cmd/brew-idris2-pack-pin
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: materializer-gate-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  gate:
+    runs-on: macos-15
+    timeout-minutes: 90
+    steps:
+      - name: Checkout tap
+        uses: actions/checkout@v6
+
+      - name: Set up Homebrew
+        uses: Homebrew/actions/setup-homebrew@main
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Restore idris2-pack download cache
+        id: tc-cache
+        uses: actions/cache/restore@v5
+        with:
+          path: ~/Library/Caches/Homebrew/downloads
+          key: idris2pack-downloads-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('versions.json') }}
+          restore-keys: idris2pack-downloads-${{ runner.os }}-${{ runner.arch }}-
+
+      - name: Setup Hell
+        uses: ./.github/actions/setup-hell
+
+      - name: Typecheck and smoke-render materializer
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: ./scripts/check-materializer.hell
+
+      - name: Save idris2-pack download cache
+        if: always() && steps.tc-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v5
+        with:
+          path: ~/Library/Caches/Homebrew/downloads
+          key: ${{ steps.tc-cache.outputs.cache-primary-key }}

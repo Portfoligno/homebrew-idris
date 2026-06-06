@@ -1,0 +1,39 @@
+#!/bin/sh
+# brew idris2-pack-pin — thin entry point; logic is in
+# scripts/idris2-pack-materialize.idr, compiled on first use (Chez codegen).
+#
+# This file renders nothing itself: it locates the idris2 the installed
+# idris2-pack keg ships, compiles the committed materializer source into the
+# tap's gitignored build/ tree on first use (or when the source changes), and
+# execs it with every argument forwarded unchanged. Recompilation is keyed on a
+# sha256 stamp of the source, not mtime (brew update can rewrite mtimes).
+set -eu
+
+cmd_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)
+tap=$(CDPATH= cd -- "$cmd_dir/.." && pwd -P)
+
+prefix=$(brew --prefix idris2-pack 2>/dev/null) || prefix=
+idris2=$prefix/libexec/idris2-toolchain/bin/idris2
+[ "$prefix" ] && [ -x "$idris2" ] || {
+  printf '%s\n' 'idris2-pack-pin: idris2 toolchain not found — run `brew install idris2-pack` first.' >&2
+  exit 1
+}
+
+src_rel=scripts/idris2-pack-materialize.idr
+[ -f "$tap/$src_rel" ] || {
+  printf '%s\n' "idris2-pack-pin: missing $tap/$src_rel" >&2
+  exit 1
+}
+
+out=$tap/build/exec/brew-idris2-pack-pin
+stamp=$tap/build/.pin-stamp
+want_line=$(shasum -a 256 -- "$tap/$src_rel")
+want=${want_line%% *}
+have=$(cat -- "$stamp" 2>/dev/null) || have=
+
+if [ ! -x "$out" ] || [ "$want" != "$have" ]; then
+  ( CDPATH= cd -- "$tap" && "$idris2" --codegen chez -p contrib -o brew-idris2-pack-pin "$src_rel" )
+  printf '%s\n' "$want" >"$stamp"
+fi
+
+HOMEBREW_IDRIS_TAP=$tap exec "$out" "$@"

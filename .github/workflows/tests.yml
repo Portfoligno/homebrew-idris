@@ -4,6 +4,10 @@ on:
     branches:
       - main
       - update/**
+    paths-ignore:
+      # Manifest-only commits (publish) never change a buildable formula, so
+      # they need not wake test-bot.
+      - versions.json
 
 env:
   HOMEBREW_DEVELOPER: 1

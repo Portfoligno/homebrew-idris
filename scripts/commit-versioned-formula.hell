@@ -1,10 +1,12 @@
 #!/usr/bin/env hell
 
--- Commit and push a versioned formula snapshot.
+-- Commit and push the versions.json manifest after a publish.
 -- Usage: ./scripts/commit-versioned-formula.hell
 --
--- Reads the version from Formula/idris2-pack.rb, then stages, commits,
--- and pushes the corresponding versioned formula file.
+-- Reads the version from Formula/idris2-pack.rb, then stages, commits, and
+-- pushes versions.json (which create-versioned-formula.hell just updated with
+-- the version's repackaged-bottle SHAs). The dated @<date>.rb is no longer
+-- committed -- it is materialized on demand from versions.json.
 
 -- Run a process, capture stdout, die on failure.
 readChecked = \label -> \proc -> do
@@ -35,11 +37,11 @@ main = do
   let withoutPrefix = Text.drop (Text.length "version \"") trimmedLine
   let (version, _rest) = Text.breakOn "\"" withoutPrefix
 
-  let formulaFile = Text.concat ["Formula/idris2-pack@", version, ".rb"]
-  let commitMsg = Text.concat ["idris2-pack@", version, ": versioned formula snapshot"]
+  let manifestFile = "versions.json"
+  let commitMsg = Text.concat ["idris2-pack@", version, ": record bottle SHAs in versions.json"]
 
   Main.runChecked "git add"
-    (Process.proc "git" ["add", formulaFile])
+    (Process.proc "git" ["add", manifestFile])
 
   Main.runChecked "git commit"
     (Process.proc "git" ["commit", "-m", commitMsg])
@@ -47,4 +49,4 @@ main = do
   Main.runChecked "git push"
     (Process.proc "git" ["push", "origin", "main"])
 
-  Text.putStrLn (Text.concat ["Committed and pushed ", formulaFile])
+  Text.putStrLn (Text.concat ["Committed and pushed ", manifestFile, " for ", version])

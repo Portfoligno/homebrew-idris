@@ -233,6 +233,14 @@ class Idris2Pack < Formula
       Use `brew upgrade idris2-pack` rather than `pack update` to update.
       Pack state is automatically aligned with the bundled collection on
       first run after install or upgrade (requires network for DB download).
+
+      Dated snapshots are generated on demand (they are no longer committed
+      to the tap). To install a specific date:
+        brew idris2-pack-pin 2026.05.02
+        brew install Portfoligno/idris/idris2-pack@2026.05.02
+
+      List available dates:  brew idris2-pack-pin --list
+      Access a pinned keg:   "$(brew --prefix idris2-pack@2026.05.02)/bin/pack"
     EOS
   end
 
