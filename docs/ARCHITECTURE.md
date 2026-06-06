@@ -66,6 +66,18 @@ An ERB template with `<%= ENV.fetch('PLACEHOLDER') %>` markers, rendered by `erb
 
 **`verify-install.yml`** — Weekly. Installs from the tap on ARM runners and verifies the bottle was used.
 
+## Versioned snapshots
+
+Dated snapshots (`idris2-pack@<date>`) are **not** committed to the tap. The `Formula/` tree on GitHub shows only the main formula; each historical version is materialized on demand from a committed manifest, so the repository stays small while every published version remains installable.
+
+- **`versions.json`** — the manifest, one entry per dated version: pack/Idris2 commits and SHAs, the ordered library set with per-library `.ipkg` install steps, and the bottle block (`root_url`, `rebuild`, per-arch SHA256). CI writes it; it is the single source of truth for snapshot metadata.
+- **`scripts/idris2-pack-materialize.idr`** — the Idris materializer. It renders `Formula/idris2-pack@<date>.rb` from `versions.json` + `Formula/idris2-pack.rb.erb` by literal string substitution, copying (never recomputing) the recorded SHAs. A missing/non-hex field, a missing template anchor, or an unknown version is a hard error.
+- **`cmd/brew-idris2-pack-pin`** — the external `brew` command. A thin POSIX `sh` launcher that, on first use, compiles the materializer with the idris2 the installed `idris2-pack` keg ships (Chez backend, `-p contrib`) into the tap's gitignored `build/`, caches it (recompiling only when the source changes), and runs it. No binary is committed; because it needs that compiler, `idris2-pack` must be installed before pinning, and the command fails loudly otherwise.
+
+Generated `idris2-pack@<date>.rb` files are gitignored, so a `brew update` tap reset never clobbers them, and they are keg-only versioned formulae. Already-installed dated kegs are self-contained — `brew --prefix`/`list`/`uninstall` resolve them from the keg even though the tap ships no committed file.
+
+CI keeps the manifest current: `update-formula.hell` appends each new version's record to `versions.json`, and `create-versioned-formula.hell` repackages the versioned bottles and records their SHAs and `rebuild` counter into it. `materializer-gate.yml` / `check-materializer.hell` typecheck the materializer and smoke-render the newest version on changes — without committing any binary.
+
 ## Version scheme
 
 CalVer `YYYY.MM.DD` derived from the nightly collection date. For example, `nightly-260403.toml` becomes version `2026.04.03`.
