@@ -10,18 +10,24 @@
 -- to be installed first.
 --
 -- It COPIES per-version data (URLs, SHAs, commits, ipkg steps) out of the
--- manifest and renders the eight <%= ENV.fetch('...') %> markers of the
+-- manifest and renders the eleven <%= ENV.fetch('...') %> markers of the
 -- committed ERB body with the real `erb` engine -- the same engine and the same
--- env contract scripts/update-formula.hell uses for the main formula. The eight
--- tokens are delivered through the environment (never on erb's command line) and
--- erb's stdout is captured verbatim. Three non-ERB transforms then run in Idris
--- by guarded literal replacement: the bottle block over the placeholder comment,
--- the class rename Idris2Pack -> Idris2PackAT<date>, and the keg_only
--- :versioned_formula insert. `erb` is therefore a render-time dependency, located
--- via $IDRIS2_PACK_PIN_ERB, $HOMEBREW_RUBY_PATH's sibling erb, or /usr/bin/erb --
--- no regex, no hashing, no network. A missing/short/non-hex field, a missing erb
--- env var, a missing template anchor, an unrendered tag, or an unknown version is
--- a hard error (die), never a silent default.
+-- env contract scripts/update-formula.hell uses for the main formula. The three
+-- multi-line block tokens (RESOURCE_BLOCKS, LIBRARY_INSTALL_BLOCKS, BOTTLE_BLOCK)
+-- are themselves built by per-element erb renders of the shared templates/*.rb.erb
+-- partials (one erb invocation per resource / per --install step / per bottle
+-- line, joined here with the centralized separators); only scalars and those
+-- joins remain in code. All eleven main tokens are delivered through the
+-- environment (never on erb's command line) and the MAIN render's stdout is
+-- captured verbatim with NO post-render surgery. The dated specifics that USED to
+-- be patched in after erb -- the bottle block, the class rename Idris2Pack ->
+-- Idris2PackAT<date>, and the keg_only :versioned_formula insert -- are three of
+-- the eleven tokens, pre-formatted as DATA in buildErbEnv (CLASS_NAME,
+-- BOTTLE_BLOCK, KEG_ONLY) and rendered by erb. `erb` is therefore a render-time
+-- dependency, located via $IDRIS2_PACK_PIN_ERB, $HOMEBREW_RUBY_PATH's sibling
+-- erb, or /usr/bin/erb -- no regex, no hashing, no network. A missing/short/
+-- non-hex field, a missing erb env var, an unrendered tag, or an unknown version
+-- is a hard error (die), never a silent default.
 --
 -- Usage (as the brew external command, argv0 = .../cmd/brew-idris2-pack-pin):
 --   brew idris2-pack-pin <YYYY.MM.DD> [<YYYY.MM.DD> ...]   materialize one/more
@@ -187,116 +193,21 @@ selectEntry v root = do
             ++ unwords (map fst kvs))
 
 -- ===========================================================================
--- Rendering (erb for the 8 tokens; guarded literal transforms for the rest)
+-- Rendering (every block value built by per-element erb renders, joined here;
+-- the final main render is then a pure erb pass with no post-erb surgery)
 -- ===========================================================================
-
-||| Split on the FIRST occurrence of `n`; returns (before, Just after) or
-||| (whole, Nothing) when absent. `n` is assumed non-empty by callers.
-splitFirst : String -> String -> (String, Maybe String)
-splitFirst n s = go "" s
-  where
-    go : String -> String -> (String, Maybe String)
-    go acc cur =
-      if isPrefixOf n cur
-        then (acc, Just (substr (length n) (length cur) cur))
-        else case strUncons cur of
-               Nothing       => (acc ++ cur, Nothing)
-               Just (c, rst) => go (acc ++ singleton c) (assert_smaller cur rst)
-
-||| Replace every occurrence of `n` with `r` in `s` (Idris base has no
-||| Text.replace; recurse over the tail after each match).
-covering
-replaceAll : String -> String -> String -> String
-replaceAll n r s =
-  case n of
-    "" => s
-    _  => case splitFirst n s of
-            (pre, Nothing)   => pre
-            (pre, Just rest) => pre ++ r ++ replaceAll n r rest
-
-||| Guarded literal replacement of all occurrences. Dies (Left) if the anchor
-||| is absent, so an ERB drift is a hard error not a silent no-op.
-covering
-replaceChecked : String -> String -> String -> String -> Either String String
-replaceChecked label needle repl haystack =
-  if isInfixOf needle haystack
-    then Right (replaceAll needle repl haystack)
-    else Left (label ++ ": anchor not found: " ++ needle)
-
-renderResource : Lib -> String
-renderResource l =
-  "  resource \"" ++ l.name ++ "\" do\n" ++
-  "    url \"" ++ l.url ++ "\"\n" ++
-  "    sha256 \"" ++ l.sha256 ++ "\"\n" ++
-  "  end"
-
-renderInstall : Lib -> String
-renderInstall l =
-  let steps = map (\s => "      system idris2_bin, \"--install\", \"" ++ s ++ "\"") l.ipkgs
-  in "    resource(\"" ++ l.name ++ "\").stage do\n" ++
-     joinBy "\n" steps ++ "\n" ++
-     "    end"
-
-||| The bottle block over the placeholder comment lines, alignment computed
-||| from tag lengths (longest tag gets a single space; shorter tags get
-||| extra spaces so the opening quotes line up).
-renderBottle : Entry -> String
-renderBottle e =
-  let tags   = map os e.entries
-      maxLen = foldl (\a, t => max a (length t)) 0 tags
-      rebLn  = if e.rebuild == 0 then [] else ["    rebuild " ++ show e.rebuild]
-      shaLn  = map (renderShaLine maxLen) e.entries
-  in joinBy "\n" (rebLn ++ shaLn)
-  where
-    renderShaLine : Nat -> BottleEntry -> String
-    renderShaLine maxLen be =
-      let pad = pack (replicate (minus maxLen (length be.os) + 1) ' ')
-      in "    sha256 cellar: :" ++ e.cellar ++ ", " ++ be.os ++ ":" ++ pad ++
-         "\"" ++ be.sha256 ++ "\""
-
-||| The 3-line placeholder comment block in the .erb (lines 12-14). Stored as
-||| one literal anchor; replaced wholesale by the rendered bottle block.
-bottlePlaceholder : String
-bottlePlaceholder =
-  "    # sha256 lines auto-generated by `brew bottle --merge --write`\n" ++
-  "    # sha256 cellar: :any, arm64_sequoia: \"...\"\n" ++
-  "    # sha256 cellar: :any, arm64_sonoma:  \"...\""
 
 ||| version "2026.06.05" -> "20260605"
 classSuffix : String -> String
 classSuffix = pack . filter (/= '.') . unpack
 
-||| The 8 ERB tokens as (name, value) pairs -- the SAME strings the old inline
-||| replacement used, so erb's output is byte-identical to the old pipeline.
-||| Mirrors the producer's env in scripts/update-formula.hell.
-erbEnv : Entry -> List (String, String)
-erbEnv e =
-  [ ("VERSION",                e.version)
-  , ("COLLECTION",             e.collection)
-  , ("PACK_COMMIT",            e.packCommit)
-  , ("PACK_SHA256",            e.packSha)
-  , ("IDRIS2_COMMIT",          e.idris2Commit)
-  , ("IDRIS2_SHA256",          e.idris2Sha)
-  , ("RESOURCE_BLOCKS",        joinBy "\n\n" (map renderResource e.libs))
-  , ("LIBRARY_INSTALL_BLOCKS", joinBy "\n\n" (map renderInstall  e.libs))
-  ]
-
-||| The three NON-ERB transforms, applied to erb's output in order: the bottle
-||| block over the comment placeholder, the class rename, and the keg_only
-||| insert -- all by guarded literal replacement, lifted verbatim from the old
-||| renderFormula Steps C and D.
-covering
-applyVersionedTransforms : Entry -> String -> Either String String
-applyVersionedTransforms e erbOut = do
-  -- Step C: the final bottle block over the placeholder comment block.
-  s9 <- replaceChecked "bottle block" bottlePlaceholder (renderBottle e) erbOut
-  -- Step D: class rename + keg_only insert.
-  s10 <- replaceChecked "class rename"
-           "class Idris2Pack < Formula"
-           ("class Idris2PackAT" ++ classSuffix e.version ++ " < Formula") s9
-  replaceChecked "keg_only insert"
-    "  end\n\n  depends_on"
-    "  end\n\n  keg_only :versioned_formula\n\n  depends_on" s10
+-- Inter-element separators, centralized (these are the relocated concatenation:
+-- the only Ruby-structure strings the producer still owns are these joins).
+sepResources, sepInstallBlocks, sepInstallSteps, sepBottleLines : String
+sepResources     = "\n\n"   -- between resource blocks
+sepInstallBlocks = "\n\n"   -- between library install blocks
+sepInstallSteps  = "\n"     -- between --install steps within a block
+sepBottleLines   = "\n"     -- between bottle lines (rebuild + sha lines)
 
 -- ===========================================================================
 -- Tap-root discovery + paths
@@ -333,6 +244,19 @@ erbPath root = root ++ "/Formula/idris2-pack.rb.erb"
 
 formulaPath : String -> String -> String
 formulaPath root v = root ++ "/Formula/idris2-pack@" ++ v ++ ".rb"
+
+||| The repo-root templates/ directory holding the per-element erb partials
+||| (kept out of Formula/ so brew's *.rb loader and cmdPrune never see them).
+templatesDir : String -> String
+templatesDir root = root ++ "/templates"
+
+resourceTmpl, installStepTmpl, installBlockTmpl, bottleShaTmpl, bottleRebuildTmpl :
+  String -> String
+resourceTmpl      root = templatesDir root ++ "/resource.rb.erb"
+installStepTmpl   root = templatesDir root ++ "/install-step.rb.erb"
+installBlockTmpl  root = templatesDir root ++ "/install-block.rb.erb"
+bottleShaTmpl     root = templatesDir root ++ "/bottle-sha.rb.erb"
+bottleRebuildTmpl root = templatesDir root ++ "/bottle-rebuild.rb.erb"
 
 -- ===========================================================================
 -- IO actions
@@ -411,18 +335,19 @@ exitNote st =
     then "exit code "        ++ show ((st `div` 256) `mod` 256)
     else "killed by signal " ++ show (st `mod` 128)
 
-||| Render the 8 ERB tokens with the real erb engine: locate an absolute erb,
-||| push the tokens through the environment (never on the command line), spawn
-||| `erb <templatePath>` capturing stdout verbatim, check the exit status, and
-||| guard against any unrendered tag. Fails loud at each stage.
+||| Spawn the located erb on a template PATH (a structured argv element, never
+||| an interpolated command string), capture stdout verbatim, gate the exit
+||| status, and reject any unrendered tag. The caller sets the environment first.
+||| `extraArgs` carries renderer FLAGS only (e.g. ["-T", "-"] for element trim
+||| mode) -- never data. The main render passes [] so its behavior is unchanged.
 covering
-runErb : (erbAbs : String) -> (templateAbs : String) -> Entry -> IO String
-runErb erbAbs templateAbs e = do
-  traverse_ setEnvOrDie (erbEnv e)
+erbCapture : (erbAbs : String) -> (extraArgs : List String) ->
+             (templateAbs : String) -> IO String
+erbCapture erbAbs extraArgs templateAbs = do
   -- Typed argv list -> escapeCmd quotes each element. Token DATA is NOT here;
-  -- only the located erb binary and the template PATH (a structured list
-  -- element, never a hand-built command string, never interpolated data).
-  Right h <- popen [erbAbs, templateAbs] Read
+  -- only the located erb binary, the trim FLAGS, and the template PATH (each a
+  -- structured list element, never a hand-built command string, never data).
+  Right h <- popen (erbAbs :: extraArgs ++ [templateAbs]) Read
     | Left err => abort ("cannot start erb on " ++ templateAbs ++ ": " ++ show err)
   Right out <- fRead h
     | Left err => abort ("error reading erb output for " ++ templateAbs ++ ": " ++ show err)
@@ -435,8 +360,112 @@ runErb erbAbs templateAbs e = do
     abort ("erb left an unrendered tag while rendering " ++ templateAbs)
   pure out
 
-||| Materialize one version: select, render via erb, apply the versioned
-||| transforms, write (overwriting deterministically).
+||| Render ONE element template: set ONLY this element's vars (overwrite=True so
+||| each iteration replaces the previous element's values -- no stale leak),
+||| capture with `-T -` trim mode. Each partial ends with a `<% -%>` tag, so the
+||| trim consumes the file's single trailing newline and the rendered element has
+||| NO trailing newline -- the joins below own every inter-element separator.
+covering
+renderElement : (erbAbs : String) -> (templateAbs : String) ->
+                List (String, String) -> IO String
+renderElement erbAbs templateAbs pairs = do
+  traverse_ setEnvOrDie pairs
+  erbCapture erbAbs ["-T", "-"] templateAbs
+
+||| RESOURCE_BLOCKS: render each library's resource block, join with "\n\n".
+covering
+renderResources : (erbAbs : String) -> (root : String) -> List Lib -> IO String
+renderResources erbAbs root libs = do
+  blocks <- traverse one libs
+  pure (joinBy sepResources blocks)
+  where
+    covering
+    one : Lib -> IO String
+    one l = renderElement erbAbs (resourceTmpl root)
+      [ ("RES_NAME",   l.name)
+      , ("RES_URL",    l.url)
+      , ("RES_SHA256", l.sha256)
+      ]
+
+||| LIBRARY_INSTALL_BLOCKS: for each library render one --install step per ipkg,
+||| join the steps with "\n", feed them to the block wrapper, then join the
+||| blocks with "\n\n". Iteration and nesting stay here; templates never loop.
+covering
+renderInstalls : (erbAbs : String) -> (root : String) -> List Lib -> IO String
+renderInstalls erbAbs root libs = do
+  blocks <- traverse lib libs
+  pure (joinBy sepInstallBlocks blocks)
+  where
+    covering
+    step : String -> IO String
+    step s = renderElement erbAbs (installStepTmpl root) [ ("STEP", s) ]
+    covering
+    lib : Lib -> IO String
+    lib l = do
+      steps <- traverse step l.ipkgs
+      renderElement erbAbs (installBlockTmpl root)
+        [ ("INS_NAME",  l.name)
+        , ("INS_STEPS", joinBy sepInstallSteps steps)
+        ]
+
+||| BOTTLE_BLOCK: an optional `rebuild` line (only when rebuild /= 0) prepended
+||| to the per-arch sha lines, joined with "\n". The alignment pad is computed
+||| HERE as DATA (maxLen - len(os) + 1 spaces over the entry's tags) and passed
+||| as B_PAD; the template does no arithmetic. B_PREFIX is "" for real shas.
+covering
+renderBottleBlock : (erbAbs : String) -> (root : String) -> Entry -> IO String
+renderBottleBlock erbAbs root e = do
+  let maxLen = foldl (\a, t => max a (length t)) 0 (map os e.entries)
+  rebLines <- if e.rebuild == 0
+                then pure []
+                else do r <- renderElement erbAbs (bottleRebuildTmpl root)
+                                 [ ("B_REBUILD", show e.rebuild) ]
+                        pure [r]
+  shaLines <- traverse (sha maxLen) e.entries
+  pure (joinBy sepBottleLines (rebLines ++ shaLines))
+  where
+    covering
+    sha : Nat -> BottleEntry -> IO String
+    sha maxLen be = do
+      let pad = pack (replicate (minus maxLen (length be.os) + 1) ' ')
+      renderElement erbAbs (bottleShaTmpl root)
+        [ ("B_PREFIX", "")
+        , ("B_CELLAR", e.cellar)
+        , ("B_OS",     be.os)
+        , ("B_PAD",    pad)
+        , ("B_SHA256", be.sha256)
+        ]
+
+||| Assemble the 11 main ERB tokens. The first eight mirror the producer's env
+||| in scripts/update-formula.hell; three are now built by per-element erb
+||| renders (RESOURCE_BLOCKS, LIBRARY_INSTALL_BLOCKS, BOTTLE_BLOCK); CLASS_NAME
+||| and KEG_ONLY are dated-formula literals. IO because the three block values
+||| come from erb subprocesses; the element keys (RES_*, STEP, INS_*, B_*) are
+||| disjoint from these 11, so no leftover element var collides with the render.
+covering
+buildErbEnv : (erbAbs : String) -> (root : String) -> Entry ->
+              IO (List (String, String))
+buildErbEnv erbAbs root e = do
+  resources <- renderResources   erbAbs root e.libs
+  installs  <- renderInstalls    erbAbs root e.libs
+  bottle    <- renderBottleBlock erbAbs root e
+  pure
+    [ ("VERSION",                e.version)
+    , ("COLLECTION",             e.collection)
+    , ("PACK_COMMIT",            e.packCommit)
+    , ("PACK_SHA256",            e.packSha)
+    , ("IDRIS2_COMMIT",          e.idris2Commit)
+    , ("IDRIS2_SHA256",          e.idris2Sha)
+    , ("RESOURCE_BLOCKS",        resources)
+    , ("LIBRARY_INSTALL_BLOCKS", installs)
+    , ("CLASS_NAME",             "Idris2PackAT" ++ classSuffix e.version)
+    , ("BOTTLE_BLOCK",           bottle)
+    , ("KEG_ONLY",               "  keg_only :versioned_formula\n\n")
+    ]
+
+||| Materialize one version: select, build the 11 tokens (each block value via
+||| per-element erb renders joined here), render the MAIN template verbatim (no
+||| trim, no post-erb surgery), and write deterministically.
 covering
 materializeOne : String -> JSON -> (erbAbs : String) -> String -> IO ()
 materializeOne root root_json erbAbs v = do
@@ -445,8 +474,9 @@ materializeOne root root_json erbAbs v = do
   when (entry.version /= v) $
     abort ("manifest inconsistency: key " ++ v ++
            " maps to version " ++ entry.version)
-  erbOut <- runErb erbAbs (erbPath root) entry
-  out    <- orDie (applyVersionedTransforms entry erbOut)
+  env <- buildErbEnv erbAbs root entry
+  traverse_ setEnvOrDie env
+  out <- erbCapture erbAbs [] (erbPath root)
   let fp = formulaPath root v
   Right () <- writeFile fp out
     | Left err => abort ("cannot write " ++ fp ++ ": " ++ show err)

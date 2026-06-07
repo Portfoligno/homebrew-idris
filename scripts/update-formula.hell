@@ -167,27 +167,41 @@ processResource = \resourceName -> \owner -> \repo -> \keys -> \jsonFile -> do
     ["  ", resourceName, ": ", commit, " (", Show.show (List.length ipkgPaths), " ipkg)"])
   IO.pure (resourceName, url, sha, installSteps)
 
--- Build a resource block for the formula.
-buildResourceBlock = \name -> \url -> \sha -> do
-  IO.pure (Text.concat
-    [ "  resource \"", name, "\" do\n"
-    , "    url \"", url, "\"\n"
-    , "    sha256 \"", sha, "\"\n"
-    , "  end"
-    ])
+-- Render ONE element template via erb with the trim flags (-T -) and a typed
+-- env, capturing stdout verbatim. The element vars are consed onto the full
+-- process environment so the erb child still finds PATH; only the template PATH
+-- is on argv, never element data. Each partial ends with a `<% -%>` tag, so
+-- `-T -` strips the file's single trailing newline and the render has NO
+-- trailing newline -- the joins below own every inter-element separator.
+renderElement = \template -> \pairs -> do
+  baseEnv <- Environment.getEnvironment
+  Main.readChecked (Text.concat ["erb ", template])
+    (Process.setEnv (pairs <> baseEnv)
+      (Process.proc "erb" ["-T", "-", template]))
 
--- Build a library install block for the formula.
-buildInstallBlock = \name -> \installSteps -> do
-  let steps = Text.splitOn ";" installSteps
-  let lines = List.map (\step ->
-        Text.concat ["      system idris2_bin, \"--install\", \"", step, "\""]
-        ) steps
-  let installLines = Text.intercalate "\n" lines
-  IO.pure (Text.concat
-    [ "    resource(\"", name, "\").stage do\n"
-    , installLines, "\n"
-    , "    end"
-    ])
+-- Inter-element separators, centralized (these are the relocated concatenation:
+-- the only Ruby-structure strings this producer still owns are these joins).
+-- Must match scripts/idris2-pack-materialize.idr's separators byte-for-byte.
+sepResources = "\n\n"      -- between resource blocks
+sepInstallBlocks = "\n\n"  -- between library install blocks
+sepInstallSteps = "\n"     -- between --install steps within a block
+sepBottleLines = "\n"      -- between bottle lines
+
+-- A pad of exactly n literal spaces, built from data (List.take/repeat), never
+-- a hardcoded count. n comes from the tag-length arithmetic below.
+spaces = \n -> Text.concat (List.take n (List.repeat " "))
+
+-- The longest os-tag length in a bottle's arch set. The bottle alignment pad is
+-- a function of this width, so it is computed in the producer (the only place
+-- that sees the whole tag set) -- the template just places the finished pad.
+maxOsLen = \tags ->
+  List.foldr (\t -> \a -> if Ord.gt (Text.length t) a then Text.length t else a) 0 tags
+
+-- The alignment pad for one os tag: (maxLen - len(os)) + 1 spaces, so the
+-- longest tag gets one space and shorter tags get extra so the opening quotes
+-- line up. Int.subtract a b = b - a, so this is maxLen - len(os).
+bottlePad = \maxLen -> \os ->
+  Main.spaces (Int.plus (Int.subtract (Text.length os) maxLen) 1)
 
 -- Build one library JSON object for the manifest. The filter is a static
 -- literal; the ipkg install paths flow in as $ARGS.positional (typed), never
@@ -329,23 +343,61 @@ main = do
     Main.processResource rn owner repo keys "/tmp/collection.json"
     ) resources
 
-  -- Step 6: Build resource and install blocks from the processed results.
+  -- Step 6: Render resource and install blocks via the SHARED element templates
+  -- (the same templates/*.rb.erb the Idris materializer renders), one erb
+  -- invocation per element. NO loops in any template; Hell does all iteration
+  -- and joins with the centralized separators. Each element render uses `-T -`
+  -- trim, so it carries no trailing newline and the joins own every separator.
   rbs <- Monad.mapM (\p -> do
     let (n, u, s, _steps) = p
-    Main.buildResourceBlock n u s
+    Main.renderElement "templates/resource.rb.erb"
+      [ ("RES_NAME", n), ("RES_URL", u), ("RES_SHA256", s) ]
     ) processed
-  let resourceBlocks = Text.intercalate "\n\n" rbs
+  let resourceBlocks = Text.intercalate Main.sepResources rbs
 
   ibs <- Monad.mapM (\p -> do
     let (n, _u, _s, steps) = p
-    Main.buildInstallBlock n steps
+    let ipkgs = Text.splitOn ";" steps
+    -- inner element loop: one erb render per --install step
+    stepList <- Monad.mapM (\ip ->
+      Main.renderElement "templates/install-step.rb.erb" [ ("STEP", ip) ]
+      ) ipkgs
+    let insSteps = Text.intercalate Main.sepInstallSteps stepList
+    -- outer element: the .stage wrapper, fed the pre-joined steps via env
+    Main.renderElement "templates/install-block.rb.erb"
+      [ ("INS_NAME", n), ("INS_STEPS", insSteps) ]
     ) processed
-  let installBlocks = Text.intercalate "\n\n" ibs
+  let installBlocks = Text.intercalate Main.sepInstallBlocks ibs
 
   -- Derive collection name from filename (strip .toml extension)
   let (collectionName, _ext) = Text.breakOn ".toml" collectionFile
 
   -- Step 7: Generate formula via ERB
+  --
+  -- The MAIN formula's bottle body is the fill-me comment placeholder that
+  -- `brew bottle --merge --write` overwrites post-build. The two `# sha256
+  -- cellar:` comment lines are rendered through the SAME templates/bottle-sha.rb.erb
+  -- the versioned path uses (B_PREFIX="# ", B_SHA256="...", aligned by the
+  -- producer-computed B_PAD); the static prose head line is the only literal,
+  -- as it has no data. The arch tags mirror the arm64-only bottle matrix this
+  -- producer writes into versions.json; the pad is computed here over those
+  -- tags (no hardcoded counts) so the opening quotes align. Joined with "\n";
+  -- NO trailing newline -- the template's own `<%= %>\n` line supplies the
+  -- newline before `  end`. The MAIN bottle has no rebuild line.
+  let mainArches = ["arm64_sequoia", "arm64_sonoma"]
+  let mainMaxLen = Main.maxOsLen mainArches
+  let bottleHead = "    # sha256 lines auto-generated by `brew bottle --merge --write`"
+  bottleComments <- Monad.mapM (\arch ->
+    Main.renderElement "templates/bottle-sha.rb.erb"
+      [ ("B_PREFIX", "# ")
+      , ("B_CELLAR", "any")
+      , ("B_OS",     arch)
+      , ("B_PAD",    Main.bottlePad mainMaxLen arch)
+      , ("B_SHA256", "...")
+      ]
+    ) mainArches
+  let mainBottleBlock = Text.intercalate Main.sepBottleLines (List.cons bottleHead bottleComments)
+
   env <- Environment.getEnvironment
   let erbEnv =
         List.cons ("VERSION", version)
@@ -356,7 +408,14 @@ main = do
         (List.cons ("IDRIS2_SHA256", idris2Sha)
         (List.cons ("RESOURCE_BLOCKS", resourceBlocks)
         (List.cons ("LIBRARY_INSTALL_BLOCKS", installBlocks)
-        env)))))))
+        -- The three structural placeholders the unified template now requires.
+        -- MAIN formula = the live, non-versioned formula: class name has no
+        -- @<date> suffix, it is NOT keg_only (empty value -> no keg_only line),
+        -- and its bottle body is the fill-me comment placeholder above.
+        (List.cons ("CLASS_NAME", "Idris2Pack")
+        (List.cons ("KEG_ONLY", "")
+        (List.cons ("BOTTLE_BLOCK", mainBottleBlock)
+        env))))))))))
 
   formula <- Main.readChecked "erb"
     (Process.setEnv erbEnv
