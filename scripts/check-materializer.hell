@@ -9,6 +9,8 @@
 --
 -- Gates (each a hard failure):
 --   * typecheck: `idris2 --check -p contrib` must succeed.
+--   * erb preflight: `erb --version` must succeed -- the render spawns the real
+--     erb engine, so erb must be present before the smoke render runs.
 --   * smoke render: compile the materializer the same way the entry point does,
 --     materialize the newest manifest version into a temp tap (the version as a
 --     real argv argument, the tap via HOMEBREW_IDRIS_TAP), and confirm a
@@ -108,6 +110,12 @@ main = do
   -- GATE 1 (typecheck): the materializer must compile clean before it ships.
   Main.runChecked "idris2 --check materializer"
     (Process.proc idris2 ["--check", "-p", "contrib", "scripts/idris2-pack-materialize.idr"])
+
+  -- erb preflight: the render now spawns the real `erb` engine, so a missing
+  -- erb must fail here with a clear message rather than as a cryptic render
+  -- abort inside GATE 2.
+  Main.runChecked "erb present"
+    (Process.proc "erb" ["--version"])
 
   -- GATE 2 (smoke render + determinism diff).
   Main.assertSmokeRender idris2

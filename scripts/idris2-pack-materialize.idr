@@ -9,11 +9,19 @@
 -- committed, so pinning requires idris2-pack (which provides idris2 + Chez)
 -- to be installed first.
 --
--- It only COPIES per-version data (URLs, SHAs, commits, ipkg steps) out of the
--- manifest and substitutes them into the committed ERB body by literal string
--- replacement -- no regex, no hashing, no network, no subprocess for rendering.
--- A missing/short/non-hex field, a missing template anchor, or an unknown
--- version is a hard error (die), never a silent default.
+-- It COPIES per-version data (URLs, SHAs, commits, ipkg steps) out of the
+-- manifest and renders the eight <%= ENV.fetch('...') %> markers of the
+-- committed ERB body with the real `erb` engine -- the same engine and the same
+-- env contract scripts/update-formula.hell uses for the main formula. The eight
+-- tokens are delivered through the environment (never on erb's command line) and
+-- erb's stdout is captured verbatim. Three non-ERB transforms then run in Idris
+-- by guarded literal replacement: the bottle block over the placeholder comment,
+-- the class rename Idris2Pack -> Idris2PackAT<date>, and the keg_only
+-- :versioned_formula insert. `erb` is therefore a render-time dependency, located
+-- via $IDRIS2_PACK_PIN_ERB, $HOMEBREW_RUBY_PATH's sibling erb, or /usr/bin/erb --
+-- no regex, no hashing, no network. A missing/short/non-hex field, a missing erb
+-- env var, a missing template anchor, an unrendered tag, or an unknown version is
+-- a hard error (die), never a silent default.
 --
 -- Usage (as the brew external command, argv0 = .../cmd/brew-idris2-pack-pin):
 --   brew idris2-pack-pin <YYYY.MM.DD> [<YYYY.MM.DD> ...]   materialize one/more
@@ -179,7 +187,7 @@ selectEntry v root = do
             ++ unwords (map fst kvs))
 
 -- ===========================================================================
--- Rendering (literal Text.replace, alignment computed from tag lengths)
+-- Rendering (erb for the 8 tokens; guarded literal transforms for the rest)
 -- ===========================================================================
 
 ||| Split on the FIRST occurrence of `n`; returns (before, Just after) or
@@ -258,51 +266,37 @@ bottlePlaceholder =
 classSuffix : String -> String
 classSuffix = pack . filter (/= '.') . unpack
 
-||| Render a versioned formula from the ERB template + one manifest entry.
-||| Mirrors the producer pipeline: 8 ERB token substitutions, the final bottle
+||| The 8 ERB tokens as (name, value) pairs -- the SAME strings the old inline
+||| replacement used, so erb's output is byte-identical to the old pipeline.
+||| Mirrors the producer's env in scripts/update-formula.hell.
+erbEnv : Entry -> List (String, String)
+erbEnv e =
+  [ ("VERSION",                e.version)
+  , ("COLLECTION",             e.collection)
+  , ("PACK_COMMIT",            e.packCommit)
+  , ("PACK_SHA256",            e.packSha)
+  , ("IDRIS2_COMMIT",          e.idris2Commit)
+  , ("IDRIS2_SHA256",          e.idris2Sha)
+  , ("RESOURCE_BLOCKS",        joinBy "\n\n" (map renderResource e.libs))
+  , ("LIBRARY_INSTALL_BLOCKS", joinBy "\n\n" (map renderInstall  e.libs))
+  ]
+
+||| The three NON-ERB transforms, applied to erb's output in order: the bottle
 ||| block over the comment placeholder, the class rename, and the keg_only
-||| insert -- all by literal replacement, all guarded.
+||| insert -- all by guarded literal replacement, lifted verbatim from the old
+||| renderFormula Steps C and D.
 covering
-renderFormula : String -> Entry -> Either String String
-renderFormula erb e =
-  let resB = joinBy "\n\n" (map renderResource e.libs)
-      insB = joinBy "\n\n" (map renderInstall  e.libs)
-  in do
-    -- Step B: the 8 simple ERB tokens.
-    s1 <- replaceChecked "VERSION"
-            "<%= ENV.fetch('VERSION') %>" e.version erb
-    let s2 = replaceAllUnchecked "<%= ENV.fetch('COLLECTION') %>" e.collection s1
-    s3 <- replaceChecked "PACK_COMMIT"
-            "<%= ENV.fetch('PACK_COMMIT') %>" e.packCommit s2
-    s4 <- replaceChecked "PACK_SHA256"
-            "<%= ENV.fetch('PACK_SHA256') %>" e.packSha s3
-    s5 <- replaceChecked "IDRIS2_COMMIT"
-            "<%= ENV.fetch('IDRIS2_COMMIT') %>" e.idris2Commit s4
-    s6 <- replaceChecked "IDRIS2_SHA256"
-            "<%= ENV.fetch('IDRIS2_SHA256') %>" e.idris2Sha s5
-    s7 <- replaceChecked "RESOURCE_BLOCKS"
-            "<%= ENV.fetch('RESOURCE_BLOCKS') %>" resB s6
-    s8 <- replaceChecked "LIBRARY_INSTALL_BLOCKS"
-            "<%= ENV.fetch('LIBRARY_INSTALL_BLOCKS') %>" insB s7
-    -- Step C: the final bottle block over the placeholder comment block.
-    s9 <- replaceChecked "bottle block" bottlePlaceholder (renderBottle e) s8
-    -- Step D: class rename + keg_only insert.
-    s10 <- replaceChecked "class rename"
-             "class Idris2Pack < Formula"
-             ("class Idris2PackAT" ++ classSuffix e.version ++ " < Formula") s9
-    replaceChecked "keg_only insert"
-      "  end\n\n  depends_on"
-      "  end\n\n  keg_only :versioned_formula\n\n  depends_on" s10
-  where
-    -- COLLECTION may legitimately equal a placeholder value in old snapshots;
-    -- it must appear in the template (it does, on the COLLECTION write line),
-    -- but use the same checked helper to stay fail-loud.
-    covering
-    replaceAllUnchecked : String -> String -> String -> String
-    replaceAllUnchecked n r s =
-      case replaceChecked "COLLECTION" n r s of
-        Right out => out
-        Left _    => s
+applyVersionedTransforms : Entry -> String -> Either String String
+applyVersionedTransforms e erbOut = do
+  -- Step C: the final bottle block over the placeholder comment block.
+  s9 <- replaceChecked "bottle block" bottlePlaceholder (renderBottle e) erbOut
+  -- Step D: class rename + keg_only insert.
+  s10 <- replaceChecked "class rename"
+           "class Idris2Pack < Formula"
+           ("class Idris2PackAT" ++ classSuffix e.version ++ " < Formula") s9
+  replaceChecked "keg_only insert"
+    "  end\n\n  depends_on"
+    "  end\n\n  keg_only :versioned_formula\n\n  depends_on" s10
 
 -- ===========================================================================
 -- Tap-root discovery + paths
@@ -354,24 +348,105 @@ readManifest root = do
     Just j  => pure j
     Nothing => abort ("invalid JSON in " ++ mp)
 
-covering
-readErb : String -> IO String
-readErb root = do
-  let ep = erbPath root
-  Right raw <- readFile ep
-    | Left err => abort ("cannot read template " ++ ep ++ ": " ++ show err)
-  pure raw
+||| ".../bin/ruby" -> Just ".../bin/erb": replace the final '/'-separated
+||| component (ruby) with erb. brew exports HOMEBREW_RUBY_PATH to external
+||| commands, and portable-ruby ships erb beside ruby.
+siblingErb : String -> Maybe String
+siblingErb ruby =
+  let parts : List String := forget (split (== '/') ruby)
+  in case dropLast parts of
+       []   => Nothing
+       dirs => Just (joinBy "/" dirs ++ "/erb")
+  where
+    -- All components except the final one (the ruby binary name).
+    dropLast : List String -> List String
+    dropLast xs = reverse (drop 1 (reverse xs))
 
-||| Materialize one version: select, render, write (overwriting deterministically).
+||| Locate an ABSOLUTE erb, failing loud if none exist. Order:
+|||   1. $IDRIS2_PACK_PIN_ERB (override; if set but missing -> hard error),
+|||   2. dirname($HOMEBREW_RUBY_PATH)/erb (brew's own portable-ruby erb),
+|||   3. /usr/bin/erb (macOS system erb),
+|||   4. else abort.
+||| Bare PATH is deliberately NOT trusted (determinism).
 covering
-materializeOne : String -> JSON -> String -> String -> IO ()
-materializeOne root root_json erb v = do
+locateErb : IO String
+locateErb = do
+  ov <- getEnv "IDRIS2_PACK_PIN_ERB"
+  case ov of
+    Just p  => do
+      ok <- exists p
+      if ok then pure p
+            else abort ("IDRIS2_PACK_PIN_ERB set but not found: " ++ p)
+    Nothing => do
+      hrp <- getEnv "HOMEBREW_RUBY_PATH"
+      firstExisting (mapMaybe id [ hrp >>= siblingErb, Just "/usr/bin/erb" ])
+  where
+    erbMissingMsg : String
+    erbMissingMsg =
+      "erb (Ruby's template engine) is required to materialize dated formulae "
+      ++ "but was not found. Tried $IDRIS2_PACK_PIN_ERB, $HOMEBREW_RUBY_PATH's "
+      ++ "sibling erb, and /usr/bin/erb. Install Ruby (`brew install ruby`) or "
+      ++ "set IDRIS2_PACK_PIN_ERB to an erb executable."
+    covering
+    firstExisting : List String -> IO String
+    firstExisting []        = abort erbMissingMsg
+    firstExisting (c :: cs) = do
+      ok <- exists c
+      if ok then pure c else firstExisting cs
+
+||| Set one env var for the erb child, failing loud on a genuine system error.
+||| overwrite=True guarantees our value wins over any pre-existing var AND that
+||| each version in a loop overwrites the previous one's values (no stale leak).
+covering
+setEnvOrDie : (String, String) -> IO ()
+setEnvOrDie (k, v) = do
+  ok <- setEnv k v True
+  when (not ok) $ abort ("cannot set environment variable " ++ k ++ " for erb")
+
+||| Decode a pclose/wait status into a human-readable note for the error text.
+||| The gate itself is just `st /= 0`; this only formats the message.
+exitNote : Int -> String
+exitNote st =
+  if st `mod` 256 == 0
+    then "exit code "        ++ show ((st `div` 256) `mod` 256)
+    else "killed by signal " ++ show (st `mod` 128)
+
+||| Render the 8 ERB tokens with the real erb engine: locate an absolute erb,
+||| push the tokens through the environment (never on the command line), spawn
+||| `erb <templatePath>` capturing stdout verbatim, check the exit status, and
+||| guard against any unrendered tag. Fails loud at each stage.
+covering
+runErb : (erbAbs : String) -> (templateAbs : String) -> Entry -> IO String
+runErb erbAbs templateAbs e = do
+  traverse_ setEnvOrDie (erbEnv e)
+  -- Typed argv list -> escapeCmd quotes each element. Token DATA is NOT here;
+  -- only the located erb binary and the template PATH (a structured list
+  -- element, never a hand-built command string, never interpolated data).
+  Right h <- popen [erbAbs, templateAbs] Read
+    | Left err => abort ("cannot start erb on " ++ templateAbs ++ ": " ++ show err)
+  Right out <- fRead h
+    | Left err => abort ("error reading erb output for " ++ templateAbs ++ ": " ++ show err)
+  st <- pclose h
+  when (st /= 0) $
+    abort ("erb failed (" ++ exitNote st ++ ") rendering " ++ templateAbs)
+  -- A rendered formula never contains "<%="; if it does, a tag was left
+  -- unrendered (or removed from the template) -- a hard error, not a silent pass.
+  when (isInfixOf "<%=" out) $
+    abort ("erb left an unrendered tag while rendering " ++ templateAbs)
+  pure out
+
+||| Materialize one version: select, render via erb, apply the versioned
+||| transforms, write (overwriting deterministically).
+covering
+materializeOne : String -> JSON -> (erbAbs : String) -> String -> IO ()
+materializeOne root root_json erbAbs v = do
   entry <- orDie (selectEntry v root_json)
   -- Defensive: the keyed entry's own version must equal the request.
   when (entry.version /= v) $
     abort ("manifest inconsistency: key " ++ v ++
            " maps to version " ++ entry.version)
-  out <- orDie (renderFormula erb entry)
+  erbOut <- runErb erbAbs (erbPath root) entry
+  out    <- orDie (applyVersionedTransforms entry erbOut)
   let fp = formulaPath root v
   Right () <- writeFile fp out
     | Left err => abort ("cannot write " ++ fp ++ ": " ++ show err)
@@ -384,10 +459,10 @@ cmdList _ root_json = do
   traverse_ (putStrLn . fst) kvs
 
 covering
-cmdAll : String -> JSON -> String -> IO ()
-cmdAll root root_json erb = do
+cmdAll : String -> JSON -> (erbAbs : String) -> IO ()
+cmdAll root root_json erbAbs = do
   kvs <- orDie (manifestVersions root_json)
-  traverse_ (\(v, _) => materializeOne root root_json erb v) kvs
+  traverse_ (\(v, _) => materializeOne root root_json erbAbs v) kvs
 
 ||| Remove generated Formula/idris2-pack@<date>.rb whose date is not in the
 ||| manifest. Only touches files matching the dated pattern; never the main
@@ -429,9 +504,9 @@ cmdPrune root root_json = do
 ||| Arguments are passed as a typed list to `system` via a single argv-style
 ||| command; brew is on PATH for the external command.
 covering
-cmdInstall : String -> JSON -> String -> String -> IO ()
-cmdInstall root root_json erb v = do
-  materializeOne root root_json erb v
+cmdInstall : String -> JSON -> (erbAbs : String) -> String -> IO ()
+cmdInstall root root_json erbAbs v = do
+  materializeOne root root_json erbAbs v
   let spec = "Portfoligno/idris/idris2-pack@" ++ v
   -- run brew install; propagate failure as a non-zero exit.
   code <- system ["brew", "install", spec]
@@ -466,14 +541,14 @@ main = do
           cmdList root j
         ["--all"] => do
           j <- readManifest root
-          erb <- readErb root
+          erb <- locateErb
           cmdAll root j erb
         ["--prune"] => do
           j <- readManifest root
           cmdPrune root j
         ["--install", v] => do
           j <- readManifest root
-          erb <- readErb root
+          erb <- locateErb
           cmdInstall root j erb v
         ("--install" :: _) => abort ("--install takes exactly one version\n" ++ usage)
         args =>
@@ -481,5 +556,5 @@ main = do
             then abort ("unknown option among: " ++ unwords args ++ "\n" ++ usage)
             else do
               j <- readManifest root
-              erb <- readErb root
+              erb <- locateErb
               traverse_ (materializeOne root j erb) args
