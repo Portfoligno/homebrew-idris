@@ -60,7 +60,7 @@ runs:
       run: chmod +x ~/.local/bin/hell
 
     - name: Save Hell binary cache
-      if: steps.hell-cache.outputs.cache-hit != 'true'
+      if: always() && steps.hell-cache.outputs.cache-hit != 'true'
       uses: actions/cache/save@v4
       with:
         path: ~/.local/bin/hell

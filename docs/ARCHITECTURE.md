@@ -39,20 +39,66 @@ The `libexec/` layout isolates the toolchain from the user's PATH. Only the `pac
 
 ### Template (`Formula/idris2-pack.rb.erb`)
 
-An ERB template with `<%= ENV.fetch('PLACEHOLDER') %>` markers, rendered by `erb` via `update-formula.hell`. Placeholders:
-- `{{VERSION}}` — CalVer version
-- `{{PACK_COMMIT}}`, `{{PACK_SHA256}}` — pack source archive
-- `{{IDRIS2_COMMIT}}`, `{{IDRIS2_SHA256}}` — Idris2 source archive
-- `{{RESOURCE_BLOCKS}}` — Ruby `resource` blocks for all libraries
-- `{{LIBRARY_INSTALL_BLOCKS}}` — Per-resource `stage` blocks with explicit `.ipkg` install paths
+A single ERB template shared by BOTH formula producers (see Scripts). It uses
+real `<%= ENV.fetch('TOKEN') %>` markers — not mustache `{{...}}` — and every
+fetch is default-free, so a missing variable is a hard Ruby `KeyError`, never a
+silent empty string. Rendering is a pure `erb` pass with NO post-render string
+surgery; the two producers diverge only in the VALUES they bind.
+
+The template requires exactly 11 env tokens (its own header comment is the
+authoritative list):
+
+- `VERSION` — CalVer version
+- `COLLECTION` — pack-db nightly collection name (written to `libexec/COLLECTION`)
+- `PACK_COMMIT`, `PACK_SHA256` — pack source archive
+- `IDRIS2_COMMIT`, `IDRIS2_SHA256` — Idris2 source archive
+- `RESOURCE_BLOCKS` — Ruby `resource` blocks for all libraries
+- `LIBRARY_INSTALL_BLOCKS` — per-resource `stage` blocks with explicit `.ipkg` install paths
+- `CLASS_NAME` — `Idris2Pack` for the main formula, `Idris2PackAT<date>` for a dated snapshot
+- `BOTTLE_BLOCK` — the per-arch `sha256 cellar:` lines placed inside `bottle do`
+- `KEG_ONLY` — empty for the main formula; the `keg_only :versioned_formula` line for a dated snapshot
+
+The three multi-line block tokens (`RESOURCE_BLOCKS`, `LIBRARY_INSTALL_BLOCKS`,
+`BOTTLE_BLOCK`) are assembled from per-element renders of the
+`templates/*.rb.erb` partials (`resource`, `install-step`, `install-block`,
+`bottle-sha`, `bottle-rebuild`), so both producers share the inner templates too.
 
 ### Scripts
 
-**`resolve-collection.py`** — Parses a pack-db TOML, extracts commits for pack, Idris2, and 10 libraries, downloads each source archive to compute SHA256, inspects `.ipkg` files within each archive to determine install order, and outputs `resources.json` with per-resource `install_steps`.
+The pipeline is orchestrated in Hell (`scripts/*.hell` — CI orchestration and
+glue), with one Idris materializer (`scripts/*.idr` — on-device formula
+rendering) and a single minimal POSIX `sh` launcher, `cmd/brew-idris2-pack-pin`
+(see Versioned snapshots).
 
-**`generate-formula.py`** — Fills the template with data from `resources.json` and a version string, writes the final formula.
+**Formula producers** — both render the shared ERB template above:
 
-**`verify-bottles.sh`** — Installs from the tap and verifies the bottle was used and the binary works.
+- **`scripts/update-formula.hell`** — resolves the latest pack-db nightly, computes archive
+  SHA256s and per-library `.ipkg` install order, binds the 11 env tokens, and renders
+  `Formula/idris2-pack.rb` via `erb`. Also appends the new version's record to `versions.json`.
+- **`scripts/idris2-pack-materialize.idr`** — the on-demand producer of dated
+  `Formula/idris2-pack@<date>.rb` snapshots. Renders the SAME template with values COPIED out
+  of `versions.json` (never recomputed), through the same `erb` engine. This is the logic
+  behind the `brew idris2-pack-pin` command.
+
+**Supporting Hell scripts:**
+
+- **`scripts/check-upstream.hell`** — queries pack-db for the latest nightly, compares against
+  the formula version, checks STATUS.md health, decides whether to update.
+- **`scripts/push-update.hell`** — creates/pushes the `update/` branch over SSH and opens a PR.
+- **`scripts/create-versioned-formula.hell`** — repackages published bottles as versioned assets
+  and records their SHAs and `rebuild` counter into `versions.json`.
+- **`scripts/commit-versioned-formula.hell`** — commits the updated `versions.json`.
+- **`scripts/check-materializer.hell`** — typechecks the materializer and smoke-renders the
+  newest manifest version (CI gate; commits no binary).
+- **`scripts/verify-install.hell`** — installs from the tap and verifies the bottle was used.
+- **`scripts/extract-formula-name.hell`**, **`scripts/install-yq.hell`**,
+  **`scripts/check-formula-ipkgs.hell`** — small CI helpers.
+
+**On-device Idris** (runs using the idris2 the formula installs, per the Idris Exemption):
+
+- **`scripts/pack-init.idr`** — first-run pack-state alignment, compiled into the keg.
+- **`cmd/brew-idris2-pack-pin`** — the minimal `sh` launcher that compiles and runs the
+  materializer (see Versioned snapshots).
 
 ### Workflows
 

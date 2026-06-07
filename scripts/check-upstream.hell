@@ -87,18 +87,21 @@ main = do
     then Exit.die "Failed to fetch STATUS.md from upstream"
     else IO.pure ()
 
-  -- Write status to temp file for jq-less parsing.
-  -- Count lines in the Failing Packages section that start with "|" and
-  -- are not the header or separator.
-  Text.writeFile "/tmp/status.md" statusMd
+  -- Parse the Failing Packages section in-memory: no sed, no regex, no
+  -- subprocess. statusMd was already fetched via Main.readChecked (dies on
+  -- non-zero curl exit) and guarded against an empty body above, so a fetch
+  -- failure has aborted loudly and cannot reach here as empty output that
+  -- masquerades as "0 failing packages".
+  --
+  -- Slice from the "## Failing Packages" heading up to the next "## " heading
+  -- with breakOn, then count table data rows. breakOn is total, so there is
+  -- no tool exit code to ignore.
+  let (_beforeFailing, fromHeading) = Text.breakOn "## Failing Packages" statusMd
+  let (_headingLine, afterHeading) = Text.breakOn "\n" fromHeading
+  let (failingSection, _afterSection) = Text.breakOn "\n##" afterHeading
 
-  -- Use grep to count failing package rows (if any).
-  -- Extract between "## Failing Packages" and the next "##".
-  (grepExit, grepOut, _grepErr) <- Text.readProcess
-    (Process.proc "sed" ["-n", "/## Failing Packages/,/^##/p", "/tmp/status.md"])
-
-  let sedLines = Text.splitOn "\n" (Text.strip grepOut)
-  let tableRows = List.filter (\line -> Text.isPrefixOf "|" line) sedLines
+  let sectionLines = Text.splitOn "\n" (Text.strip failingSection)
+  let tableRows = List.filter (\line -> Text.isPrefixOf "|" line) sectionLines
   let notHeaders = List.filter (\line -> Bool.not (Text.isInfixOf "Package" line)) tableRows
   let dataRows = List.filter (\line -> Bool.not (Text.isInfixOf "---" line)) notHeaders
   let failingCount = List.length dataRows

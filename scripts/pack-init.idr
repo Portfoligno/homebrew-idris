@@ -303,11 +303,15 @@ computeStamp collection commits =
   let sortedCommits = sort (map fst commits)
   in collection ++ ":" ++ joinBy "," sortedCommits
 
--- Parse the collection part from a stamp string.
-parseStampCollection : String -> String
+-- Parse the collection part from a stamp string. Returns Nothing when there is
+-- no ':' separator (i.e. the input is not a real stamp), never an empty-string
+-- sentinel. `break` keeps the matched char in the tail, so a valid
+-- "coll:commits" yields a non-empty tail; a colon-less/empty string yields [].
+parseStampCollection : String -> Maybe String
 parseStampCollection stamp =
   case break (== ':') (unpack stamp) of
-    (before, _) => pack before
+    (_, [])     => Nothing            -- no ':' separator -> not a real stamp
+    (before, _) => Just (pack before)
 
 -- Create or update symlinks for all known formula commits.
 covering
@@ -383,11 +387,16 @@ main = do
   let stampFile = packState ++ "/.brew-stamp"
   let newStamp = computeStamp primaryCollection allCommits
 
-  oldStamp <- map (fromMaybe "") (readFileMaybe stampFile)
+  -- Keep readFileMaybe's Maybe; fold a present-but-blank file into Nothing so
+  -- "absent" and "blank" share ONE absence representation (no "" sentinel).
+  mOldStamp <- readFileMaybe stampFile
+  let mPriorStamp : Maybe String
+      mPriorStamp = case mOldStamp of
+        Just s  => if s == "" then Nothing else Just s
+        Nothing => Nothing
 
-  if oldStamp == newStamp
-    then exitWith ExitSuccess
-    else pure ()
+  -- Early-exit only when a real prior stamp equals the new one.
+  when (mPriorStamp == Just newStamp) (exitWith ExitSuccess)
 
   -- Initialize
   mkdirP packState
@@ -396,9 +405,14 @@ main = do
   createSymlinks installDir allCommits
   cleanupStaleSymlinks installDir allCommits
 
-  -- Config changes only when the primary collection changed
-  let oldCollection = parseStampCollection oldStamp
-  let collectionChanged = oldCollection /= primaryCollection
+  -- Config changes only when the primary collection changed. No prior stamp (or
+  -- an unparsable one) => treat the collection as (re)established.
+  let collectionChanged : Bool
+      collectionChanged = case mPriorStamp of
+        Nothing  => True
+        Just old => case parseStampCollection old of
+          Nothing      => True
+          Just oldColl => oldColl /= primaryCollection
 
   if collectionChanged
     then do

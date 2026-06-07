@@ -530,6 +530,13 @@ cmdPrune root root_json = do
                 | Left err => abort ("cannot remove " ++ fp ++ ": " ++ show err)
               ignore (fPutStrLn stderr ("pruned " ++ fp))
 
+||| The tap-qualified versioned-formula identifier for `brew install`. ONE
+||| indivisible Homebrew name@version token (a single argv element), not a
+||| command line: built only from `v`, which materializeOne has already proven
+||| equal to a manifest key (selectEntry + the version guard above).
+tapSpec : String -> String
+tapSpec v = "Portfoligno/idris/idris2-pack@" ++ v
+
 ||| Materialize <date> then exec `brew install <tap>/idris2-pack@<date>`.
 ||| Arguments are passed as a typed list to `system` via a single argv-style
 ||| command; brew is on PATH for the external command.
@@ -537,9 +544,8 @@ covering
 cmdInstall : String -> JSON -> (erbAbs : String) -> String -> IO ()
 cmdInstall root root_json erbAbs v = do
   materializeOne root root_json erbAbs v
-  let spec = "Portfoligno/idris/idris2-pack@" ++ v
   -- run brew install; propagate failure as a non-zero exit.
-  code <- system ["brew", "install", spec]
+  code <- system ["brew", "install", tapSpec v]
   when (code /= 0) (exitWith (ExitFailure 1))
 
 -- ===========================================================================

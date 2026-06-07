@@ -89,7 +89,7 @@ class Idris2Pack < Formula
 
     # Step 2: Install Idris2 library dependencies (in order)
     idris2_version = Utils.safe_popen_read(idris2_bin, "--version").strip
-                          .sub(/^Idris 2, version /, "")
+                          .delete_prefix("Idris 2, version ")
     pkg_path = "#{idris2_prefix}/idris2-#{idris2_version}"
     ENV["IDRIS2_PACKAGE_PATH"] = pkg_path
 
@@ -245,6 +245,6 @@ class Idris2Pack < Formula
   end
 
   test do
-    assert_match "Available commands", shell_output("#{bin}/pack help")
+    assert_includes shell_output("#{bin}/pack help"), "Available commands"
   end
 end

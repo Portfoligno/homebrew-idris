@@ -77,10 +77,17 @@ main = do
     (Process.proc "git" ["push", sshRemote, branch])
   Text.putStrLn (Text.concat ["Pushed branch ", branch])
 
-  -- Check for existing PR
-  (prExitCode, prOut, _prErr) <- Text.readProcess
+  -- Check for existing PR. A gh failure (network/auth/rate-limit) must be
+  -- FATAL, not conflated with "no open PR" via the `// empty` jq output: the
+  -- empty string is a valid "no PR exists" answer ONLY when gh itself SUCCEEDED.
+  -- Mirrors the gh-release-view guard in create-versioned-formula.hell; honors
+  -- the CONSTRAINTS rule against "" error sentinels.
+  (prExitCode, prOut, prErr) <- Text.readProcess
     (Process.proc "gh" ["pr", "list", "--head", branch, "--state", "open", "--json", "number", "--jq", ".[0].number // empty"])
-  let prNumber = Text.strip prOut
+  prNumber <- Exit.exitCode
+    (IO.pure (Text.strip prOut))
+    (\code -> Exit.die (Text.concat ["gh pr list failed with exit code ", Show.show code, " for ", branch, ": ", prErr]))
+    prExitCode
 
   if Eq.eq prNumber ""
     then do

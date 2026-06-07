@@ -38,12 +38,6 @@ jobs:
     steps:
       - name: Checkout tap
         uses: actions/checkout@v6
-        with:
-          # The versioned gate adds a detached worktree at the pinned baseline
-          # commit (02f690e; advancing it = editing that hash in a reviewed PR)
-          # and reads git blobs from history; a shallow clone (the default) does
-          # not reach that commit. Full history.
-          fetch-depth: 0
 
       - name: Set up Homebrew
         uses: Homebrew/actions/setup-homebrew@main

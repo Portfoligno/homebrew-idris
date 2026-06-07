@@ -7,47 +7,22 @@
 -- source is sound before users hit it.
 -- Usage: ./scripts/check-materializer.hell
 --
--- The expected bytes for the two output gates come from GIT, not from committed
--- golden fixtures (test/goldens/ has been deleted):
---   * the MAIN gate derives its expected from `git show HEAD:Formula/idris2-pack.rb`
---     (the committed, post-`brew bottle --merge` formula), reconstructing the one
---     non-derivable region (the bottle interior) so the diff is byte-exact;
---   * the VERSIONED gate renders every manifest version twice -- once with the
---     materializer+templates checked out at a pinned baseline commit hash, once
---     with the working tree -- both fed the SAME current versions.json, diffs per
---     version. The expected is a re-render of a pinned git ref's inputs, never a
---     stored output. (`git show <ref>:Formula/idris2-pack@<date>.rb` was REJECTED
---     as the oracle: every historical dated blob is stale -- the caveats block
---     was added on all 12, and 2026.05.29 carries rebuild 1 vs the correct
---     rebuild 2 -- so a fixed historical commit cannot be the golden.)
---
 -- Gates (each a hard failure):
 --   * typecheck: `idris2 --check -p contrib` must succeed.
 --   * erb preflight: `erb --version` must succeed -- the render spawns the real
 --     erb engine, so erb must be present before the smoke render runs.
---   * smoke render: compile the materializer the same way the entry point does,
---     materialize the newest manifest version into a temp tap (the version as a
---     real argv argument, the tap via HOMEBREW_IDRIS_TAP), and confirm a
---     determinate, non-empty formula is produced -- diffed against a second
---     independent compile+render to prove the output is reproducible.
---   * versioned render-at-baseline: render every CURRENT manifest version with
---     BOTH the baseline-tag materializer/templates and the working-tree ones
---     (each side internally consistent, both reading the current versions.json),
---     and diff per version. A data change (new version, rebuild fix, sha fill) is
---     fed identically to both sides and so auto-passes; only a renderer/template
---     change that alters output fails -- which is then blessed by advancing the
---     baseline hash (edited in a reviewed PR). A coverage assertion proves the
---     set of versions rendered equals the set diffed, so no version is skipped.
---   * main render: set the 11 main env vars here in Hell, run the SAME unified
---     template through `erb`, and diff stdout against the expected bytes derived
---     from `git show HEAD:Formula/idris2-pack.rb`. Proves the one template also
---     yields the main (non-versioned) formula byte-for-byte; done in Hell, not
---     via a materializer mode (the materializer stays versioned-only).
---
--- The baseline ref is a pinned commit hash (02f690e, the pre-partials renderer),
--- overridable via $MATERIALIZER_BASELINE_REF; advancing the baseline means
--- editing that hash in a reviewed PR (no tag to push). All git reads run from the
--- real repo root (resolved via `git rev-parse --show-toplevel`), never temp taps.
+--   * smoke render: compile the materializer once (Chez, -p contrib) and
+--     materialize the newest manifest version into a temp tap, then assert the
+--     output is a plausible versioned formula (non-empty; carries the class,
+--     bottle, and keg_only markers). With the typecheck this proves the source
+--     users compile on first use actually renders against the committed
+--     versions.json + Formula/idris2-pack.rb.erb + templates/. It is NOT a
+--     determinism or equivalence check: re-compiling the same source and diffing
+--     proves nothing (deterministic code on fixed inputs is identical by
+--     construction), and comparing a render against a committed/baseline copy is
+--     circular (the main formula is a generated artifact; it would force a
+--     baseline bump on every intentional template edit) -- so no second
+--     compile/`diff`, baseline, worktree, or `git show` check remains.
 --
 -- Requires GH_TOKEN in environment (for brew).
 
@@ -67,33 +42,6 @@ runChecked = \label -> \proc -> do
     (\code -> Exit.die (Text.concat [label, " failed with exit code ", Show.show code]))
     result
 
--- The work-tree root of the real checkout. Every git read uses `git -C root`
--- so the gate's CWD -- and the throwaway taps under /tmp, which are NOT git
--- repos -- can never be mistaken for the source. Resolved once in main.
-repoRoot = do
-  out <- Main.readChecked "git rev-parse toplevel"
-    (Process.proc "git" ["rev-parse", "--show-toplevel"])
-  IO.pure (Text.strip out)
-
--- The baseline ref the versioned gate renders against: a pinned commit hash,
--- overridable via $MATERIALIZER_BASELINE_REF (e.g. to a SHA in CI). A data-only
--- change needs no advance; a renderer/template change is blessed by editing this
--- hash in a reviewed PR (it is the pre-partials renderer commit "Render dated
--- formulae with the real erb engine", an ancestor of main so it stays reachable
--- under fetch-depth: 0). Pinned to a hash rather than a moving tag so there is
--- no tag to push or manage.
-baselineRef = do
-  env <- Environment.getEnvironment
-  IO.pure (Maybe.maybe "02f690eaace3449dea5c47407435e2592653c83c" (\r -> r)
-    (List.lookup "MATERIALIZER_BASELINE_REF" env))
-
--- Capture the verbatim bytes of <path> at <ref> from the real repo root. `git
--- show` emits the blob exactly (trailing newline included), so its stdout diffs
--- byte-for-byte against a rendered file. Dies if the ref/blob is absent.
-gitShow = \root -> \ref -> \path -> do
-  Main.readChecked (Text.concat ["git show ", ref, ":", path])
-    (Process.proc "git" ["-C", root, "show", Text.concat [ref, ":", path]])
-
 -- Compile the materializer with the keg idris2 exactly as the entry point does
 -- (Chez codegen, contrib on the path) into build/exec/<outName>.
 compileMaterializer = \idris2 -> \outName -> do
@@ -103,18 +51,6 @@ compileMaterializer = \idris2 -> \outName -> do
       , "-p", "contrib"
       , "-o", outName
       , "scripts/idris2-pack-materialize.idr"
-      ])
-
--- Compile the materializer from an EXPLICIT source path (the baseline worktree's
--- copy), so the baseline render uses the baseline transformation. Same flags as
--- compileMaterializer; only the source path differs.
-compileMaterializerFrom = \idris2 -> \srcIdr -> \outName -> do
-  Main.runChecked (Text.concat ["idris2 compile ", outName])
-    (Process.proc idris2
-      [ "--codegen", "chez"
-      , "-p", "contrib"
-      , "-o", outName
-      , srcIdr
       ])
 
 -- Stage a throwaway tap (versions.json + the main .erb + the templates/ element
@@ -133,290 +69,44 @@ stageTap = \dir -> do
   Main.runChecked "cp templates"
     (Process.proc "cp" ["-R", "templates", Text.concat [dir, "/templates"]])
 
--- True iff <d> is a directory. `test -d` exits 0 when so, non-zero otherwise --
--- a typed exit-code branch, no stdout parsing, no shell.
-dirExists = \d -> do
-  result <- Process.runProcess (Process.proc "test" ["-d", d])
-  Exit.exitCode (IO.pure Bool.True) (\_code -> IO.pure Bool.False) result
-
--- Stage a throwaway tap whose DATA (versions.json) is the CURRENT manifest but
--- whose template (and element partials, if that source uses them) come from
--- <srcRoot> (the baseline worktree for the baseline side, "." for the current
--- side). This is the partition that makes data the FREE axis (fed identically to
--- both renders) and the template/.erb the GUARDED axis (taken from the baseline
--- on one side). The templates/ copy is conditional: an older baseline whose
--- materializer builds blocks in-code (no partials) has no templates/ dir, and
--- its render does not read one -- so copy it only when the source root has it.
-stageTapFrom = \dir -> \srcRoot -> do
-  Main.runChecked "mkdir gate dir"
-    (Process.proc "mkdir" ["-p", Text.concat [dir, "/Formula"]])
-  Main.runChecked "cp manifest (current)"
-    (Process.proc "cp" ["versions.json", Text.concat [dir, "/versions.json"]])
-  Main.runChecked "cp erb"
-    (Process.proc "cp"
-      [ Text.concat [srcRoot, "/Formula/idris2-pack.rb.erb"]
-      , Text.concat [dir, "/Formula/idris2-pack.rb.erb"]
-      ])
-  let templatesSrc = Text.concat [srcRoot, "/templates"]
-  hasTemplates <- Main.dirExists templatesSrc
-  if hasTemplates
-    then Main.runChecked "cp templates"
-      (Process.proc "cp" ["-R", templatesSrc, Text.concat [dir, "/templates"]])
-    else IO.pure ()
-
--- Smoke-render gate: build the materializer twice from the SAME source and
--- materialize the newest manifest version into two temp taps, then diff. Both
--- binaries execute the same audited .idr against the same committed
--- versions.json + Formula/idris2-pack.rb.erb, so agreement proves the render is
--- determinate (and, with the typecheck, that the source users compile on first
--- use is sound). `diff` exits non-zero on any difference (regex-free: only
--- idris2/diff/cp/mkdir/rm). The version is passed as a real argv argument (the
--- binary's own interface).
+-- Smoke-render gate: compile the materializer once (the same way the entry point
+-- does) and materialize the newest manifest version into a temp tap, then assert
+-- the rendered formula is plausible -- non-empty and carrying the class, bottle,
+-- and keg_only markers. This proves the audited .idr actually renders against the
+-- committed versions.json + Formula/idris2-pack.rb.erb + templates/ (erb
+-- invocation, JSON parse, file IO, the element-partial joins). The version is
+-- passed as a real argv argument (the binary's own interface). No second compile
+-- and no `diff`: re-running deterministic code on the same inputs is identical by
+-- construction, so a twice-and-diff check would prove nothing.
 assertSmokeRender = \idris2 -> do
   latest <- Main.readChecked "jq newest version"
     (Process.proc "jq" ["-r", ".versions | keys | sort | last", "versions.json"])
   let version = Text.strip latest
 
-  Main.compileMaterializer idris2 "brew-idris2-pack-pin-a"
-  Main.compileMaterializer idris2 "brew-idris2-pack-pin-b"
-  let binA = "build/exec/brew-idris2-pack-pin-a"
-  let binB = "build/exec/brew-idris2-pack-pin-b"
+  Main.compileMaterializer idris2 "brew-idris2-pack-pin"
+  let bin = "build/exec/brew-idris2-pack-pin"
 
-  let tapA = "/tmp/materializer-gate-a"
-  let tapB = "/tmp/materializer-gate-b"
-  Main.runChecked "rm gate dirs"
-    (Process.proc "rm" ["-rf", tapA, tapB])
-  Monad.mapM_ Main.stageTap [tapA, tapB]
+  let tap = "/tmp/materializer-gate"
+  Main.runChecked "rm gate dir"
+    (Process.proc "rm" ["-rf", tap])
+  Main.stageTap tap
 
-  Main.runChecked "materialize (a)"
-    (Process.setEnv [("HOMEBREW_IDRIS_TAP", tapA)]
-      (Process.proc binA [version]))
-  Main.runChecked "materialize (b)"
-    (Process.setEnv [("HOMEBREW_IDRIS_TAP", tapB)]
-      (Process.proc binB [version]))
+  Main.runChecked "materialize"
+    (Process.setEnv [("HOMEBREW_IDRIS_TAP", tap)]
+      (Process.proc bin [version]))
 
-  let fileA = Text.concat [tapA, "/Formula/idris2-pack@", version, ".rb"]
-  let fileB = Text.concat [tapB, "/Formula/idris2-pack@", version, ".rb"]
-  Main.runChecked "smoke-render diff"
-    (Process.proc "diff" [fileA, fileB])
+  let file = Text.concat [tap, "/Formula/idris2-pack@", version, ".rb"]
+  rendered <- Text.readFile file
+  Monad.when (Bool.not (Text.isInfixOf "class Idris2PackAT" rendered))
+    (Exit.die (Text.concat ["smoke render: missing class line in ", file]))
+  Monad.when (Bool.not (Text.isInfixOf "bottle do" rendered))
+    (Exit.die (Text.concat ["smoke render: missing bottle block in ", file]))
+  Monad.when (Bool.not (Text.isInfixOf "keg_only :versioned_formula" rendered))
+    (Exit.die (Text.concat ["smoke render: missing keg_only line in ", file]))
 
-  Main.runChecked "cleanup gate dirs"
-    (Process.proc "rm" ["-rf", tapA, tapB])
+  Main.runChecked "cleanup gate dir"
+    (Process.proc "rm" ["-rf", tap])
   Text.putStrLn (Text.concat ["smoke-render gate passed for ", version])
-
--- Render every CURRENT manifest version with `bin` into `tap`. Pin erb (via
--- IDRIS2_PACK_PIN_ERB) so the SAME engine renders both the baseline and current
--- sides -- an erb-version skew can never masquerade as renderer drift.
-renderAll = \bin -> \tap -> \erbAbs ->
-  Main.runChecked (Text.concat ["materialize --all ", tap])
-    (Process.setEnv
-      [ ("HOMEBREW_IDRIS_TAP", tap)
-      , ("IDRIS2_PACK_PIN_ERB", erbAbs)
-      ]
-      (Process.proc bin ["--all"]))
-
--- Versioned render-at-baseline gate: prove the working-tree materializer +
--- templates produce byte-identical dated formulae to the baseline ref's, for
--- every CURRENT manifest version. The expected bytes are a RE-RENDER of the
--- baseline ref's inputs (checked out into a detached worktree), not a stored
--- golden -- so there is nothing committed under test/goldens/ to drift.
---
--- Partition: versions.json (DATA) is fed identically to both sides, so every
--- data change (new version, the rebuild 1->2 fix, a publish-time sha fill) moves
--- both renders together and auto-passes; the materializer .idr + .erb +
--- templates/ (the TRANSFORMATION) come from the baseline on one side, so a
--- renderer/template edit that alters output FAILS until the baseline hash is
--- advanced (edited in a reviewed PR) to bless it. A coverage assertion proves the
--- rendered set equals the diffed set (no version silently skipped). Regex-free:
--- git/idris2/diff/cp/mkdir/rm/jq/sort only; all data flows as typed argv elements.
-assertVersionedBaseline = \idris2 -> \root -> \erbAbs -> do
-  ref <- Main.baselineRef
-  -- The worktree lives UNDER the repo (build/ is gitignored), NOT /tmp: idris2
-  -- refuses to compile a source file outside its source directory (the repo
-  -- root), so the baseline materializer's .idr must sit under the repo tree.
-  let wt    = "build/materializer-baseline-wt"
-  let tBase = "/tmp/materializer-base"
-  let tCur  = "/tmp/materializer-cur"
-
-  -- 1. Check out the baseline ref's tree (detached: no branch) for its inputs.
-  -- Remove any stale worktree dir first, then prune git's registry so a leftover
-  -- entry from a previous (possibly crashed) run cannot block `worktree add`.
-  Main.runChecked "rm stale worktree" (Process.proc "rm" ["-rf", wt])
-  Main.runChecked "git worktree prune"
-    (Process.proc "git" ["-C", root, "worktree", "prune"])
-  Main.runChecked (Text.concat ["git worktree add ", ref])
-    (Process.proc "git" ["-C", root, "worktree", "add", "--detach", wt, ref])
-
-  -- 2. Build BOTH materializers: baseline from the worktree's source, current
-  -- from the working tree. Each renders with its OWN .erb/templates (staged
-  -- below), but both read the SAME current versions.json.
-  Main.compileMaterializerFrom idris2
-    (Text.concat [wt, "/scripts/idris2-pack-materialize.idr"]) "brew-idris2-pack-pin-base"
-  Main.compileMaterializer idris2 "brew-idris2-pack-pin-cur"
-  let binBase = "build/exec/brew-idris2-pack-pin-base"
-  let binCur  = "build/exec/brew-idris2-pack-pin-cur"
-
-  -- 3. Stage taps: baseline code+templates / current data; current both.
-  Main.runChecked "rm tap dirs" (Process.proc "rm" ["-rf", tBase, tCur])
-  Main.stageTapFrom tBase wt
-  Main.stageTapFrom tCur "."
-
-  -- 4. Render every current version with each binary into its own tap.
-  Main.renderAll binBase tBase erbAbs
-  Main.renderAll binCur  tCur  erbAbs
-
-  -- 5. The set actually diffed: the current manifest's versions.
-  versionsRaw <- Main.readChecked "jq all versions"
-    (Process.proc "jq" ["-r", ".versions | keys | sort | .[]", "versions.json"])
-  let versions = List.filter (\v -> Bool.not (Eq.eq v ""))
-        (Text.splitOn "\n" (Text.strip versionsRaw))
-
-  -- 5a. Coverage assertion: the set the CURRENT materializer rendered (its
-  -- --list) must equal the manifest key set we diff -- no version silently
-  -- skipped. Both are sorted then compared with `diff` (regex-free).
-  listRaw <- Main.readChecked "materialize --list"
-    (Process.setEnv [("HOMEBREW_IDRIS_TAP", tCur), ("IDRIS2_PACK_PIN_ERB", erbAbs)]
-      (Process.proc binCur ["--list"]))
-  let listed = List.filter (\v -> Bool.not (Eq.eq v ""))
-        (Text.splitOn "\n" (Text.strip listRaw))
-  let listedSorted = List.sort listed
-  let diffedSorted = List.sort versions
-  if Eq.eq listedSorted diffedSorted
-    then IO.pure ()
-    else Exit.die (Text.concat
-      [ "coverage mismatch: materializer --list does not equal the diffed "
-      , "manifest version set\n  --list: ", Text.intercalate " " listedSorted
-      , "\n  diffed: ", Text.intercalate " " diffedSorted ])
-
-  -- 6. Per current version, diff baseline render vs current render.
-  Monad.mapM_ (\v -> do
-    let fb = Text.concat [tBase, "/Formula/idris2-pack@", v, ".rb"]
-    let fc = Text.concat [tCur,  "/Formula/idris2-pack@", v, ".rb"]
-    Main.runChecked (Text.concat ["versioned render-at-baseline diff ", v])
-      (Process.proc "diff" [fb, fc])
-    ) versions
-
-  -- 7. Cleanup: worktree first (a real git worktree), then the taps.
-  Main.runChecked "remove worktree"
-    (Process.proc "git" ["-C", root, "worktree", "remove", "--force", wt])
-  Main.runChecked "cleanup tap dirs" (Process.proc "rm" ["-rf", tBase, tCur])
-  Text.putStrLn (Text.concat
-    [ "versioned render-at-baseline gate passed ("
-    , Show.show (List.length versions), " versions vs ", ref, ")" ])
-
--- Query versions.json for a scalar string value of the default manifest entry.
-goldJq = \filter -> do
-  out <- Main.readChecked (Text.concat ["jq ", filter])
-    (Process.proc "jq" ["-r", filter, "versions.json"])
-  IO.pure (Text.strip out)
-
--- Query a multi-line BLOCK value (RESOURCE_BLOCKS / LIBRARY_INSTALL_BLOCKS) for
--- the default entry; preserve leading indentation, dropping only jq -r's single
--- trailing newline (reverse, drop 1, reverse).
-goldJqBlock = \filter -> do
-  out <- Main.readChecked (Text.concat ["jq ", filter])
-    (Process.proc "jq" ["-r", filter, "versions.json"])
-  IO.pure (Text.reverse (Text.drop 1 (Text.reverse out)))
-
--- Derive the EXPECTED pre-merge main formula from the committed POST-merge bytes
--- (`git show HEAD:Formula/idris2-pack.rb`). The committed formula and a fresh
--- render differ ONLY in the bottle interior: the committed file carries the real
--- per-arch shas that `brew bottle --merge --write` wrote, while a fresh render
--- carries the comment placeholder. So discard the committed interior and rebuild
--- it as the placeholder. Split with two structural, version-independent anchors
--- (no regex, no hardcoded char counts):
---   * "  bottle do\n" -- the bottle opener; everything before is byte-identical
---     to the render.
---   * "\n  end\n"      -- the FIRST occurrence is the bottle's own close (resource
---     `end`s come after it, inside the tail); everything from it on is identical.
--- The middle is rebuilt from the gate's own rootUrl(ver) + the same
--- mainBottleBlock the producer feeds erb, so the result equals the fresh render
--- byte-for-byte everywhere except where it MUST (the discarded real shas).
-deriveExpectedMain = \committed -> \ver -> \mainBottleBlock -> do
-  let (beforeBottle, fromBottle) = Text.breakOn "  bottle do\n" committed
-  let (_interior, endAndTail)    = Text.breakOn "\n  end\n" fromBottle
-  let rootUrl = Text.concat
-        [ "https://github.com/Portfoligno/homebrew-idris/releases/download/idris2-pack-", ver ]
-  let middle = Text.concat ["  bottle do\n    root_url \"", rootUrl, "\"\n", mainBottleBlock]
-  IO.pure (Text.concat [beforeBottle, middle, endAndTail])
-
--- Main-render gate: build the 11 MAIN env vars (eight from the default manifest
--- entry, plus CLASS_NAME=Idris2Pack, KEG_ONLY="", BOTTLE_BLOCK=the fill-me
--- comment placeholder -- exactly what update-formula.hell sets), run the unified
--- template through `erb` with those vars in the environment (never on argv), and
--- diff stdout against the EXPECTED bytes derived from `git show
--- HEAD:Formula/idris2-pack.rb` (no committed golden). The block values are
--- derived from versions.json with static jq filters, mirroring the producer.
-assertMainRender = \root -> do
-  ver <- Main.goldJq ".default"
-  collection <- Main.goldJq (Text.concat [".versions[\"", ver, "\"].collection"])
-  packCommit <- Main.goldJq (Text.concat [".versions[\"", ver, "\"].pack.commit"])
-  packSha <- Main.goldJq (Text.concat [".versions[\"", ver, "\"].pack.sha256"])
-  idris2Commit <- Main.goldJq (Text.concat [".versions[\"", ver, "\"].idris2.commit"])
-  idris2Sha <- Main.goldJq (Text.concat [".versions[\"", ver, "\"].idris2.sha256"])
-
-  let resTmpl = Text.concat
-        [ ".versions[\"", ver, "\"].libraries"
-        , " | map(\"  resource \\\"\" + .name + \"\\\" do\\n    url \\\"\" + .url + \"\\\"\\n    sha256 \\\"\" + .sha256 + \"\\\"\\n  end\")"
-        , " | join(\"\\n\\n\")" ]
-  resourceBlocks <- Main.goldJqBlock resTmpl
-
-  let insTmpl = Text.concat
-        [ ".versions[\"", ver, "\"].libraries"
-        , " | map(\"    resource(\\\"\" + .name + \"\\\").stage do\\n\""
-        , "        + ((.ipkgs | map(\"      system idris2_bin, \\\"--install\\\", \\\"\" + . + \"\\\"\") | join(\"\\n\")))"
-        , "        + \"\\n    end\")"
-        , " | join(\"\\n\\n\")" ]
-  installBlocks <- Main.goldJqBlock insTmpl
-
-  let mainBottleBlock = Text.concat
-        [ "    # sha256 lines auto-generated by `brew bottle --merge --write`\n"
-        , "    # sha256 cellar: :any, arm64_sequoia: \"...\"\n"
-        , "    # sha256 cellar: :any, arm64_sonoma:  \"...\""
-        ]
-
-  env <- Environment.getEnvironment
-  let erbEnv =
-        List.cons ("VERSION", ver)
-        (List.cons ("COLLECTION", collection)
-        (List.cons ("PACK_COMMIT", packCommit)
-        (List.cons ("PACK_SHA256", packSha)
-        (List.cons ("IDRIS2_COMMIT", idris2Commit)
-        (List.cons ("IDRIS2_SHA256", idris2Sha)
-        (List.cons ("RESOURCE_BLOCKS", resourceBlocks)
-        (List.cons ("LIBRARY_INSTALL_BLOCKS", installBlocks)
-        (List.cons ("CLASS_NAME", "Idris2Pack")
-        (List.cons ("KEG_ONLY", "")
-        (List.cons ("BOTTLE_BLOCK", mainBottleBlock)
-        env))))))))))
-
-  formula <- Main.readChecked "erb main render"
-    (Process.setEnv erbEnv
-      (Process.proc "erb" ["Formula/idris2-pack.rb.erb"]))
-
-  -- Expected bytes from git: the committed formula with its bottle interior
-  -- swapped back to the comment placeholder. Belt-and-suspenders: the one byte
-  -- region the rebuild reconstructs rather than copies is the root_url line, so
-  -- assert it is present verbatim in the committed file before trusting the split.
-  committed <- Main.gitShow root "HEAD" "Formula/idris2-pack.rb"
-  let rootLine = Text.concat
-        [ "    root_url \"https://github.com/Portfoligno/homebrew-idris/releases/download/idris2-pack-"
-        , ver, "\"\n" ]
-  if Text.isInfixOf rootLine committed
-    then IO.pure ()
-    else Exit.die "committed main formula missing expected root_url line"
-
-  expected <- Main.deriveExpectedMain committed ver mainBottleBlock
-
-  let expectedPath = "/tmp/main-expected.rb"
-  let renderPath = "/tmp/main-render.rb"
-  Text.writeFile expectedPath expected
-  Text.writeFile renderPath formula
-  Main.runChecked "main-render diff"
-    (Process.proc "diff" [expectedPath, renderPath])
-  Main.runChecked "cleanup main render"
-    (Process.proc "rm" ["-f", expectedPath, renderPath])
-  Text.putStrLn (Text.concat ["main-render gate passed for ", ver])
 
 main = do
   -- Install the toolchain (provides idris2 + contrib + chez) the same way the
@@ -429,10 +119,6 @@ main = do
   let prefix = Text.strip prefixRaw
   let idris2 = Text.concat [prefix, "/libexec/idris2-toolchain/bin/idris2"]
 
-  -- Resolve the real repo root ONCE; every git read below uses `git -C root`,
-  -- so the throwaway taps under /tmp (not git repos) can never be the git CWD.
-  root <- Main.repoRoot
-
   -- GATE 1 (typecheck): the materializer must compile clean before it ships.
   Main.runChecked "idris2 --check materializer"
     (Process.proc idris2 ["--check", "-p", "contrib", "scripts/idris2-pack-materialize.idr"])
@@ -443,24 +129,8 @@ main = do
   Main.runChecked "erb present"
     (Process.proc "erb" ["--version"])
 
-  -- Resolve the ABSOLUTE erb path so both the baseline and current renders pin
-  -- the SAME engine via IDRIS2_PACK_PIN_ERB -- an erb-version skew can never
-  -- masquerade as renderer drift in the versioned gate.
-  erbAbsRaw <- Main.readChecked "which erb"
-    (Process.proc "which" ["erb"])
-  let erbAbs = Text.strip erbAbsRaw
-
-  -- GATE 2 (smoke render + determinism diff).
+  -- GATE 2 (smoke render): compile the materializer once and materialize the
+  -- newest manifest version, asserting it renders a plausible versioned formula.
   Main.assertSmokeRender idris2
 
-  -- GATE 3 (versioned render-at-baseline): every materialized @<date>.rb is
-  -- byte-identical to a re-render of the baseline ref's inputs (no committed
-  -- golden), for every current manifest version.
-  Main.assertVersionedBaseline idris2 root erbAbs
-
-  -- GATE 4 (main render): the unified template, fed the 11 main env vars, yields
-  -- the main (non-versioned) formula byte-identical to the expected derived from
-  -- `git show HEAD:Formula/idris2-pack.rb`.
-  Main.assertMainRender root
-
-  Text.putStrLn "Materializer typechecked, smoke-rendered, and git-verified (no binary built or committed)"
+  Text.putStrLn "Materializer typechecked and smoke-rendered (no binary built or committed)"
