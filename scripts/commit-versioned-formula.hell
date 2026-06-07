@@ -7,6 +7,16 @@
 -- pushes versions.json (which create-versioned-formula.hell just updated with
 -- the version's repackaged-bottle SHAs). The dated @<date>.rb is no longer
 -- committed -- it is materialized on demand from versions.json.
+--
+-- Idempotent + safe against overlapping/superseding publishes:
+--   * tolerates an empty diff (a re-run after a clean commit is a no-op, not a
+--     failure -- the deterministic repackage converges to identical SHAs);
+--   * fetches origin/main and rebases before pushing, so a concurrent publish
+--     that already advanced main does not cause a non-fast-forward push;
+--   * refuses to regress the consumer pointer: if origin/main's versions.json
+--     .default is already STRICTLY NEWER (CalVer YYYY.MM.DD sorts
+--     lexicographically) than the version being published, a newer publish has
+--     already won and this one aborts rather than rolling .default backward.
 
 -- Run a process, capture stdout, die on failure.
 readChecked = \label -> \proc -> do
@@ -24,8 +34,17 @@ runChecked = \label -> \proc -> do
     (\code -> Exit.die (Text.concat [label, " failed with exit code ", Show.show code]))
     result
 
-main = do
-  -- Extract version from formula
+-- Run a process and return whether it exited 0 (True) or non-zero (False),
+-- without dying. Used for git's predicate-style exit codes (e.g. diff --quiet).
+runBool = \proc -> do
+  result <- Process.runProcess proc
+  Exit.exitCode
+    (IO.pure Bool.True)
+    (\_code -> IO.pure Bool.False)
+    result
+
+-- Extract the version string from the main formula.
+extractVersion = do
   formulaContents <- Text.readFile "Formula/idris2-pack.rb"
   let formulaLines = Text.splitOn "\n" formulaContents
   let versionLines = List.filter (\line -> Text.isPrefixOf "version \"" (Text.strip line)) formulaLines
@@ -36,17 +55,58 @@ main = do
   let trimmedLine = Text.strip versionLine
   let withoutPrefix = Text.drop (Text.length "version \"") trimmedLine
   let (version, _rest) = Text.breakOn "\"" withoutPrefix
+  IO.pure version
+
+main = do
+  -- Extract version being published from the formula.
+  version <- Main.extractVersion
 
   let manifestFile = "versions.json"
   let commitMsg = Text.concat ["idris2-pack@", version, ": record bottle SHAs in versions.json"]
 
+  -- Fetch origin/main so the monotonicity check and the rebase below see the
+  -- latest published state (a concurrent publish may have moved main).
+  Main.runChecked "git fetch origin main"
+    (Process.proc "git" ["fetch", "origin", "main"])
+
+  -- Monotonicity guard: read origin/main's versions.json .default and refuse to
+  -- regress it. git show is fed to jq via a typed stdin stream (Text.setStdin),
+  -- not a shell pipe; .default is a CalVer string compared lexicographically.
+  originManifest <- Main.readChecked "git show origin/main:versions.json"
+    (Process.proc "git" ["show", "origin/main:versions.json"])
+  defaultOut <- Main.readChecked "jq origin .default"
+    (Text.setStdin originManifest (Process.proc "jq" ["-r", ".default"]))
+  let originDefault = Text.strip defaultOut
+  Monad.when (Ord.gt originDefault version)
+    (Exit.die (Text.concat
+      [ "Refusing to regress versions.json default: origin/main already has "
+      , originDefault, " which is newer than the version being published ("
+      , version, "). A newer publish already won." ]))
+
+  -- Stage the manifest. Tolerate an already-clean tree: if there is nothing to
+  -- commit, the deterministic repackage produced identical bytes on a re-run, so
+  -- exit successfully rather than dying on an empty `git commit`.
   Main.runChecked "git add"
     (Process.proc "git" ["add", manifestFile])
 
-  Main.runChecked "git commit"
-    (Process.proc "git" ["commit", "-m", commitMsg])
+  -- git diff --cached --quiet exits 0 when there is NOTHING staged, non-zero
+  -- when there are staged changes; runBool maps that to True == clean tree.
+  cleanTree <- Main.runBool
+    (Process.proc "git" ["diff", "--cached", "--quiet"])
 
-  Main.runChecked "git push"
-    (Process.proc "git" ["push", "origin", "main"])
+  if cleanTree
+    then Text.putStrLn (Text.concat ["No manifest changes to commit for ", version, " (already up to date)"])
+    else do
+      Main.runChecked "git commit"
+        (Process.proc "git" ["commit", "-m", commitMsg])
 
-  Text.putStrLn (Text.concat ["Committed and pushed ", manifestFile, " for ", version])
+      -- Rebase onto the freshly-fetched origin/main before pushing so an
+      -- overlapping publish that already advanced main does not cause a
+      -- non-fast-forward rejection.
+      Main.runChecked "git rebase"
+        (Process.proc "git" ["rebase", "origin/main"])
+
+      Main.runChecked "git push"
+        (Process.proc "git" ["push", "origin", "main"])
+
+      Text.putStrLn (Text.concat ["Committed and pushed ", manifestFile, " for ", version])

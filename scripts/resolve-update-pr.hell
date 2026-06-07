@@ -1,0 +1,76 @@
+#!/usr/bin/env hell
+
+-- Resolve the publish target PR number + update branch.
+-- Usage: ./scripts/resolve-update-pr.hell
+--
+-- Auto path: HEAD_BRANCH is the workflow_run head branch
+--   (update/idris2-pack-<version>); the PR number is looked up from it.
+-- Manual path: PR_INPUT is the workflow_dispatch PR number and takes
+--   precedence; the branch is derived from it.
+--
+-- Writes to $GITHUB_OUTPUT:
+--   pr_number=<n>
+--   branch=update/idris2-pack-<version>
+--
+-- Requires GH_TOKEN in environment for GitHub API access. Every gh call is
+-- gated through Exit.exitCode (dies on failure) and an empty resolved value is
+-- a hard Exit.die -- never a silent no-op.
+
+-- Run a process, capture stdout, die on failure.
+readChecked = \label -> \proc -> do
+  (exitCode, stdout, stderr) <- Text.readProcess proc
+  Exit.exitCode
+    (IO.pure stdout)
+    (\code -> Exit.die (Text.concat [label, " failed with exit code ", Show.show code, ": ", stderr]))
+    exitCode
+
+-- Append a key=value pair to the GITHUB_OUTPUT file (Hell file IO, not a shell
+-- redirect; mirrors check-upstream.hell / extract-formula-name.hell).
+writeOutput = \key -> \value -> do
+  ghOutput <- Main.readChecked "printenv GITHUB_OUTPUT"
+    (Process.proc "printenv" ["GITHUB_OUTPUT"])
+  Text.appendFile (Text.strip ghOutput) (Text.concat [key, "=", value, "\n"])
+
+-- Look up the PR number for a head branch via gh (first PR in any state).
+prNumberForBranch = \branch -> do
+  out <- Main.readChecked "gh pr list --head"
+    (Process.proc "gh"
+      ["pr", "list", "--head", branch, "--state", "all"
+      , "--json", "number", "--jq", ".[0].number // empty"])
+  let n = Text.strip out
+  Monad.when (Eq.eq n "")
+    (Exit.die (Text.concat ["No PR found for head branch ", branch]))
+  IO.pure n
+
+-- Look up the head branch for a PR number via gh.
+branchForPr = \pr -> do
+  out <- Main.readChecked "gh pr view"
+    (Process.proc "gh"
+      ["pr", "view", pr, "--json", "headRefName", "--jq", ".headRefName"])
+  let b = Text.strip out
+  Monad.when (Eq.eq b "")
+    (Exit.die (Text.concat ["No head branch found for PR ", pr]))
+  IO.pure b
+
+main = do
+  headBranchRaw <- Main.readChecked "printenv HEAD_BRANCH"
+    (Process.proc "printenv" ["HEAD_BRANCH"])
+  prInputRaw <- Main.readChecked "printenv PR_INPUT"
+    (Process.proc "printenv" ["PR_INPUT"])
+  let headBranch = Text.strip headBranchRaw
+  let prInput = Text.strip prInputRaw
+
+  -- Manual dispatch (PR_INPUT set) takes precedence; otherwise use the build's
+  -- head branch. Each path resolves BOTH outputs so downstream steps are uniform.
+  (prNumber, branch) <-
+    if Bool.not (Eq.eq prInput "")
+      then do
+        b <- Main.branchForPr prInput
+        IO.pure (prInput, b)
+      else do
+        n <- Main.prNumberForBranch headBranch
+        IO.pure (n, headBranch)
+
+  Main.writeOutput "pr_number" prNumber
+  Main.writeOutput "branch" branch
+  Text.putStrLn (Text.concat ["Resolved PR #", prNumber, " on ", branch])
