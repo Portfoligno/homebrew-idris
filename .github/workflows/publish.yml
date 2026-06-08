@@ -21,6 +21,8 @@ env:
   HOMEBREW_GITHUB_ACTIONS: 1
   HOMEBREW_NO_AUTO_UPDATE: 1
   HOMEBREW_NO_INSTALL_FROM_API: 1
+  HOMEBREW_GIT_NAME: "github-actions[bot]"
+  HOMEBREW_GIT_EMAIL: "41898282+github-actions[bot]@users.noreply.github.com"
 
 # Serialize per source branch (auto) or dispatch PR (manual); never cancel a
 # half-done publish.
@@ -54,6 +56,8 @@ jobs:
 
       - name: Set up git
         uses: Homebrew/actions/git-user-config@main
+        with:
+          username: "github-actions[bot]"
 
       - name: Setup Hell
         uses: ./.github/actions/setup-hell

@@ -58,6 +58,8 @@ jobs:
 
       - name: Set up git
         uses: Homebrew/actions/git-user-config@main
+        with:
+          username: "github-actions[bot]"
 
       # Push via SSH deploy key so the push event triggers CI workflows.
       # GITHUB_TOKEN-created pushes do not trigger other workflows.
