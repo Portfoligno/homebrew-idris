@@ -1745,11 +1745,11 @@
         "entries": [
           {
             "os": "arm64_sequoia",
-            "sha256": null
+            "sha256": "480a9bbbe6b366f0920b2175107f851e26c87514f85b82547dd448fe0d1ef8f3"
           },
           {
             "os": "arm64_sonoma",
-            "sha256": null
+            "sha256": "c0a69aadb4dfcb1b835198fa0354453d774cd23c236cbe01336d91acbe4812ad"
           }
         ],
         "rebuild": 0,
