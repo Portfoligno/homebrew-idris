@@ -1951,11 +1951,11 @@
         "entries": [
           {
             "os": "arm64_sequoia",
-            "sha256": null
+            "sha256": "f29d7fb3d58bf6d9ba6dd1e1334dbd83c7c93939037b71b22feb4e84a3360dc6"
           },
           {
             "os": "arm64_sonoma",
-            "sha256": null
+            "sha256": "d885ee18e9785f4e5da5e9f81b127a26df22c35732fbe938cdcb19d60fa0988b"
           }
         ],
         "rebuild": 0,
