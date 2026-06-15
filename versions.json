@@ -1,5 +1,5 @@
 {
-  "default": "2026.06.13",
+  "default": "2026.06.14",
   "versions": {
     "2026.05.02": {
       "bottle": {
@@ -2047,6 +2047,109 @@
         "sha256": "85af3db1e722704d1b907a658ed1bca25385126fc33b1014d5df9457b553f4c0"
       },
       "version": "2026.06.13"
+    },
+    "2026.06.14": {
+      "bottle": {
+        "cellar": "any",
+        "entries": [
+          {
+            "os": "arm64_sequoia",
+            "sha256": null
+          },
+          {
+            "os": "arm64_sonoma",
+            "sha256": null
+          }
+        ],
+        "rebuild": 0,
+        "root_url": "https://github.com/Portfoligno/homebrew-idris/releases/download/idris2-pack-2026.06.14"
+      },
+      "collection": "nightly-260614",
+      "idris2": {
+        "commit": "6ca00e72e32849cb35e5c262904e9c3cffc1a9a4",
+        "sha256": "1dcf7176a06980acc861cfa07d67b79b9ad9892d93ac9df9e071a934df742ab4"
+      },
+      "libraries": [
+        {
+          "ipkgs": [
+            "algebra.ipkg"
+          ],
+          "name": "idris2-algebra",
+          "sha256": "d57a07e34ded0ad308b81f9ff4edc6633b9afe0263641bab4e3e9d8e0c466e0b",
+          "url": "https://github.com/stefan-hoeck/idris2-algebra/archive/b80241edadc9237c2663df098c27e6dbc99886d0.tar.gz"
+        },
+        {
+          "ipkgs": [
+            "ref1.ipkg"
+          ],
+          "name": "idris2-ref1",
+          "sha256": "752e4ba5c11d607082f5cb22a437bff89fdb1ab0908e79f21813609cef1a0749",
+          "url": "https://github.com/stefan-hoeck/idris2-ref1/archive/f7a20a9e41aba4026b50edddd689fc394d354b97.tar.gz"
+        },
+        {
+          "ipkgs": [
+            "array.ipkg"
+          ],
+          "name": "idris2-array",
+          "sha256": "43155e6d17b05dbd7aec4bf9483f374b836e683bedad4aa76df118e0dd0b3e6d",
+          "url": "https://github.com/stefan-hoeck/idris2-array/archive/7cca4fe58f28436b73f077e836c09fce091da4e9.tar.gz"
+        },
+        {
+          "ipkgs": [
+            "bytestring.ipkg"
+          ],
+          "name": "idris2-bytestring",
+          "sha256": "b2c74a34038bb35264587eef3279a9e750f356e25f16856b6da57401b07bf095",
+          "url": "https://github.com/stefan-hoeck/idris2-bytestring/archive/230d8577f02de22251786f128ec921078da4d880.tar.gz"
+        },
+        {
+          "ipkgs": [
+            "elab-util.ipkg"
+          ],
+          "name": "idris2-elab-util",
+          "sha256": "cd15b43d5e3bd0631649de8539174691302e29728740f8e29bab09928ef59bac",
+          "url": "https://github.com/stefan-hoeck/idris2-elab-util/archive/90a2363256cbaafd3b0cc4e2bf36003761b6c4f0.tar.gz"
+        },
+        {
+          "ipkgs": [
+            "getopts.ipkg"
+          ],
+          "name": "idris2-getopts",
+          "sha256": "904ef2a23953856655e9e255345696932e9540ab5e24e43f448f18945034e7b9",
+          "url": "https://github.com/idris-community/idris2-getopts/archive/0d41b98f83f3707deb0ffbc595ef36b7d9cb9eab.tar.gz"
+        },
+        {
+          "ipkgs": [
+            "filepath.ipkg"
+          ],
+          "name": "idris2-filepath",
+          "sha256": "681105b67a528329c12bff59d4359c6b7d2906ad9f8935c1392057ec550d48a2",
+          "url": "https://github.com/stefan-hoeck/idris2-filepath/archive/4e8fe9af80d457adc63904ebf58e223ba35c62aa.tar.gz"
+        },
+        {
+          "ipkgs": [
+            "refined.ipkg"
+          ],
+          "name": "idris2-refined",
+          "sha256": "8f6a3bab552797f4a04d3cde9658f1be3a540dd13345b63f82b6e18fafda73a7",
+          "url": "https://github.com/stefan-hoeck/idris2-refined/archive/7ad095dc89232cfa667e47ae507b13f132837fdd.tar.gz"
+        },
+        {
+          "ipkgs": [
+            "core/ilex-core.ipkg",
+            "ilex.ipkg",
+            "toml/ilex-toml.ipkg"
+          ],
+          "name": "idris2-ilex",
+          "sha256": "4a2650ff2c4295aca05350b13bc8565546affbaee346ec2b63ba3dd9084039f2",
+          "url": "https://github.com/stefan-hoeck/idris2-ilex/archive/0b290e0be390e589e273f0344f7ecc630053f0d3.tar.gz"
+        }
+      ],
+      "pack": {
+        "commit": "3174b1d383addcbac6ff8a1c9cebcd4fd19ce396",
+        "sha256": "389608607f2288047b51ea319e0d7a874ebae562ff44e71f4cdb3d5437dac165"
+      },
+      "version": "2026.06.14"
     }
   }
 }
