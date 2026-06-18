@@ -2157,11 +2157,11 @@
         "entries": [
           {
             "os": "arm64_sequoia",
-            "sha256": null
+            "sha256": "679aaa8d03f46606744e5a802fe9ec52c5fe326e69a22f8d51d20e0a7991d6ba"
           },
           {
             "os": "arm64_sonoma",
-            "sha256": null
+            "sha256": "d412dd51c7c65a0af4c90f4cedf74207cef84dbd554c9f1fe03dcd257d112378"
           }
         ],
         "rebuild": 0,
