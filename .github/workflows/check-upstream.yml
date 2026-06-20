@@ -23,7 +23,7 @@ jobs:
       collection_file: ${{ steps.check.outputs.collection_file }}
     steps:
       - name: Checkout tap
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Setup Hell
         uses: ./.github/actions/setup-hell
