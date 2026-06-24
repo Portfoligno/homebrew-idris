@@ -69,7 +69,7 @@ class Idris2Pack < Formula
   def install
     ENV.deparallelize # Idris2 packages must build sequentially
 
-    scheme = Formula["chezscheme"].opt_bin/"chez"
+    scheme = formula_opt_bin("chezscheme")/"chez"
     ENV["CHEZ"] = scheme
 
     ENV.append "CPATH", "#{HOMEBREW_PREFIX}/include" if OS.mac? && Hardware::CPU.arm?
@@ -177,7 +177,7 @@ class Idris2Pack < Formula
     # precedence.
 
     # Pack defaults to SCHEME=scheme, but Homebrew provides `chez`
-    ln_s Formula["chezscheme"].opt_bin/"chez", libexec/"idris2-toolchain/bin/scheme"
+    ln_s formula_opt_bin("chezscheme")/"chez", libexec/"idris2-toolchain/bin/scheme"
 
     idris2_script = libexec/"idris2-toolchain/bin/idris2"
     idris2_wrapped = libexec/"idris2-toolchain/bin/.idris2-wrapped"
@@ -193,7 +193,7 @@ class Idris2Pack < Formula
     # Homebrew-bundled collection on first run after install/upgrade.
     # IDRIS2_PREFIX is NOT exported, preventing it from leaking to
     # pack's child processes.
-    chez_bin = Formula["chezscheme"].opt_bin
+    chez_bin = formula_opt_bin("chezscheme")
     pack_header = <<~SH
       #!/bin/sh
       LIBEXEC=#{libexec}
