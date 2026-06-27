@@ -46,7 +46,7 @@ jobs:
 
       - name: Restore idris2-pack download cache
         id: tc-cache
-        uses: actions/cache/restore@v5
+        uses: actions/cache/restore@v6
         with:
           path: ~/Library/Caches/Homebrew/downloads
           key: idris2pack-downloads-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('versions.json') }}
@@ -62,7 +62,7 @@ jobs:
 
       - name: Save idris2-pack download cache
         if: always() && steps.tc-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v5
+        uses: actions/cache/save@v6
         with:
           path: ~/Library/Caches/Homebrew/downloads
           key: ${{ steps.tc-cache.outputs.cache-primary-key }}
