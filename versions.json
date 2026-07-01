@@ -2775,11 +2775,11 @@
         "entries": [
           {
             "os": "arm64_sequoia",
-            "sha256": null
+            "sha256": "00432d641deade6a258e96fb10bebd74872950b1cd7447146bd185d97c3bd9da"
           },
           {
             "os": "arm64_sonoma",
-            "sha256": null
+            "sha256": "1ec48d4b6191116b16bcafac31b9f1a9d88ebeeb76c384d5da83e428375b10c9"
           }
         ],
         "rebuild": 0,
