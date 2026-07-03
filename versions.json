@@ -2981,11 +2981,11 @@
         "entries": [
           {
             "os": "arm64_sequoia",
-            "sha256": null
+            "sha256": "7cb7cdb018fc0693d6f491793fd4d8f12714b5d3dd78efe4c5e58794f4278328"
           },
           {
             "os": "arm64_sonoma",
-            "sha256": null
+            "sha256": "38ccd4dfdbab2a5c801475a2d2c42a61b5f46d3b56fb3565f9c29dadfd863e74"
           }
         ],
         "rebuild": 0,
