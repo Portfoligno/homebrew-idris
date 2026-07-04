@@ -3084,11 +3084,11 @@
         "entries": [
           {
             "os": "arm64_sequoia",
-            "sha256": null
+            "sha256": "332793e85da5ca239a44870cfd907990c14185a3a3ab20333facbafb8e165946"
           },
           {
             "os": "arm64_sonoma",
-            "sha256": null
+            "sha256": "0df995070fd566acec48f7087047b63b6063e89f03cf285df1266a9f44293ca2"
           }
         ],
         "rebuild": 0,
