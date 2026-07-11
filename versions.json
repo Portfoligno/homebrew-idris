@@ -3702,11 +3702,11 @@
         "entries": [
           {
             "os": "arm64_sequoia",
-            "sha256": null
+            "sha256": "f6b93ab914ea294b55d25dd877c2249b971bcd9bfbfe2e2b215c00e5a3d76a59"
           },
           {
             "os": "arm64_sonoma",
-            "sha256": null
+            "sha256": "77ff723225c812c745473ad9c5f9ca70481c0d69e24a8e817f1e517e7ba5dec0"
           }
         ],
         "rebuild": 0,
