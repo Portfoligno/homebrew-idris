@@ -3908,11 +3908,11 @@
         "entries": [
           {
             "os": "arm64_sequoia",
-            "sha256": null
+            "sha256": "0209705870e5a1ad52f2543c014949fa7d4863d3b64116b939ff71a2fe993e3f"
           },
           {
             "os": "arm64_sonoma",
-            "sha256": null
+            "sha256": "1473afe1bd9cee539ce3307882fd8f72a2d7cecfbff4b1243c26ea8cb081a4fa"
           }
         ],
         "rebuild": 0,
