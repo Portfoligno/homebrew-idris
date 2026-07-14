@@ -4011,11 +4011,11 @@
         "entries": [
           {
             "os": "arm64_sequoia",
-            "sha256": null
+            "sha256": "0f76f7539780f1586f6625c652cbd154ed7bc0f2a0fe2068992b771013809aaf"
           },
           {
             "os": "arm64_sonoma",
-            "sha256": null
+            "sha256": "c56bd311335735fd65e494d67fde31b8e7ea5d0b79d780e5f6291c894e4bb21d"
           }
         ],
         "rebuild": 0,
