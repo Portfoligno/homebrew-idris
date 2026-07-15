@@ -4114,11 +4114,11 @@
         "entries": [
           {
             "os": "arm64_sequoia",
-            "sha256": null
+            "sha256": "88cc0e4e89f9c12ecc102f72595c32e5960d618812eb0e8ab80703680fd1dadd"
           },
           {
             "os": "arm64_sonoma",
-            "sha256": null
+            "sha256": "cee9bc2c2c993d0350c6a8d195914247cf0f500cffaad928360674726cfacf0a"
           }
         ],
         "rebuild": 0,
