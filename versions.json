@@ -4217,11 +4217,11 @@
         "entries": [
           {
             "os": "arm64_sequoia",
-            "sha256": null
+            "sha256": "d45d0330c3b68e79e6f5cc2a006a9bbe11e3463c6aa4c6ee649881c668b9d80a"
           },
           {
             "os": "arm64_sonoma",
-            "sha256": null
+            "sha256": "8d5d799ffdf57cb2a5abe5caa94ca19e023482bd0e860c8e0b92fff88f77b455"
           }
         ],
         "rebuild": 0,
