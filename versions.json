@@ -4423,11 +4423,11 @@
         "entries": [
           {
             "os": "arm64_sequoia",
-            "sha256": null
+            "sha256": "fc0ee1b6e9efce85a7adfa60b0c49d2bf86b31961a5d43f56c3b25453860e341"
           },
           {
             "os": "arm64_sonoma",
-            "sha256": null
+            "sha256": "990d5bf59561a29b3ac33a719cd18859a1b6fee451097f78ead0f2ffc3f614bb"
           }
         ],
         "rebuild": 0,
