@@ -4526,11 +4526,11 @@
         "entries": [
           {
             "os": "arm64_sequoia",
-            "sha256": null
+            "sha256": "5150e66d81472c92df2d6ae81b04b12cb2d7c8eb160abd6e08c0378d13afdd3f"
           },
           {
             "os": "arm64_sonoma",
-            "sha256": null
+            "sha256": "0a0b21a105e41f1fb861ff37f92fdeb5439b07b39694acc37b118296e7181f4e"
           }
         ],
         "rebuild": 0,
