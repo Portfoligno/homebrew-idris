@@ -4732,11 +4732,11 @@
         "entries": [
           {
             "os": "arm64_sequoia",
-            "sha256": null
+            "sha256": "53cc54d8df8f7fcc5d4091c346a011ac55325ef41a94dd92a816cdd9d0a15b52"
           },
           {
             "os": "arm64_sonoma",
-            "sha256": null
+            "sha256": "3ec3226797a91f20ec15592cabac7fa59c2c374b2c8e631d93327fea343bdf22"
           }
         ],
         "rebuild": 0,
