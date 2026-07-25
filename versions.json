@@ -5041,11 +5041,11 @@
         "entries": [
           {
             "os": "arm64_sequoia",
-            "sha256": null
+            "sha256": "4aa6fb675e1f7ed205f52844ef222fb245757beaf86273f8d84ec8216cc248cf"
           },
           {
             "os": "arm64_sonoma",
-            "sha256": null
+            "sha256": "687a8fa1b382d0de3f66afa1d64fdd272b2e635b19b4a5e5296dcb661dabf67f"
           }
         ],
         "rebuild": 0,
