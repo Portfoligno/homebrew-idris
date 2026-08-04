@@ -6071,11 +6071,11 @@
         "entries": [
           {
             "os": "arm64_sequoia",
-            "sha256": null
+            "sha256": "28d440e8b5d765d4705d6303cc5c610823c88e31d1660813bef3278565c46f28"
           },
           {
             "os": "arm64_sonoma",
-            "sha256": null
+            "sha256": "8994c3f7bc1474fa799b03e3271ee2f7e3202a292af7c966cdfafedc5e7afe26"
           }
         ],
         "rebuild": 0,
