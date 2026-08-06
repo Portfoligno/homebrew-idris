@@ -6277,11 +6277,11 @@
         "entries": [
           {
             "os": "arm64_sequoia",
-            "sha256": null
+            "sha256": "04dc593742305fe197adaad4af430717c3f67e859c5100a23e3959e572903171"
           },
           {
             "os": "arm64_sonoma",
-            "sha256": null
+            "sha256": "cb0819015c11cf25ca5612a0a6fdc467e64940e56a7f508de87b8538787afde6"
           }
         ],
         "rebuild": 0,
