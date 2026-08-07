@@ -6380,11 +6380,11 @@
         "entries": [
           {
             "os": "arm64_sequoia",
-            "sha256": null
+            "sha256": "27c63fdcd903cba36b2fb1b82b4f6f3f889517f14b6289ebd404433c0e2c6f20"
           },
           {
             "os": "arm64_sonoma",
-            "sha256": null
+            "sha256": "4a79d2e79d1e379650ea16d7876c81aa1d87bfdd1dd1195c9bd5ea15c2a26d9c"
           }
         ],
         "rebuild": 0,
