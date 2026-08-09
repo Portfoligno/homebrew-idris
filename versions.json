@@ -6483,11 +6483,11 @@
         "entries": [
           {
             "os": "arm64_sequoia",
-            "sha256": null
+            "sha256": "647050d6661f97f1be3e17d6cf48c84793f103b5c2e65ac0e2157963013fa26a"
           },
           {
             "os": "arm64_sonoma",
-            "sha256": null
+            "sha256": "56f37ba6320e8e50bcb20f82ab37b7c53dfda3fbff23dbf6bff3721d9b61ca82"
           }
         ],
         "rebuild": 0,
