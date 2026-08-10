@@ -6586,11 +6586,11 @@
         "entries": [
           {
             "os": "arm64_sequoia",
-            "sha256": null
+            "sha256": "15d57f79c0a8985049c06103aeada67c72f58176dc5390113155ed32e8c0a3a3"
           },
           {
             "os": "arm64_sonoma",
-            "sha256": null
+            "sha256": "06a69ec80b6f3c0d7d6fbea2a49c7fa6522db010237e5b372712683feb43855e"
           }
         ],
         "rebuild": 0,
