@@ -6689,11 +6689,11 @@
         "entries": [
           {
             "os": "arm64_sequoia",
-            "sha256": null
+            "sha256": "2436b59c50e0570e284119d2a2e7070a2e2540b4fdcd570b4bcfcfea49a5a732"
           },
           {
             "os": "arm64_sonoma",
-            "sha256": null
+            "sha256": "59c92dc5e15db5b70b995fe6ec8b7be6a5a4c57b880564080367a03af093a9f5"
           }
         ],
         "rebuild": 0,
