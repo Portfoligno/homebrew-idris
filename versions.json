@@ -6792,11 +6792,11 @@
         "entries": [
           {
             "os": "arm64_sequoia",
-            "sha256": null
+            "sha256": "5dc2730f6949c783190e160d2750b5a6156eadcd6f314e8ceb69528fbfb5e00c"
           },
           {
             "os": "arm64_sonoma",
-            "sha256": null
+            "sha256": "a337fd14f7e09156970603ba7bab74b658a7843b58ff328f68ed751b009807d4"
           }
         ],
         "rebuild": 0,
