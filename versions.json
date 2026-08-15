@@ -7101,11 +7101,11 @@
         "entries": [
           {
             "os": "arm64_sequoia",
-            "sha256": null
+            "sha256": "45b07471e5edd9aa8592b8bbe53598d41f779df08dd99b3eefd14a0776d6d263"
           },
           {
             "os": "arm64_sonoma",
-            "sha256": null
+            "sha256": "fb5ca09355edd8e0c29b961d77ebb50569784a38e3f3260b99b72e3c96e54f01"
           }
         ],
         "rebuild": 0,
