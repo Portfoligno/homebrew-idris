@@ -7307,11 +7307,11 @@
         "entries": [
           {
             "os": "arm64_sequoia",
-            "sha256": null
+            "sha256": "443abd93f18cd8c0a7e9e4b16d901519f9654b185303a3ad0da4248016c05ebc"
           },
           {
             "os": "arm64_sonoma",
-            "sha256": null
+            "sha256": "60ec3b98b41938c415ad7955c442f15837bd1fc42b177d6c5aee60f6379ca46d"
           }
         ],
         "rebuild": 0,
