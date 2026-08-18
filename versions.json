@@ -7410,11 +7410,11 @@
         "entries": [
           {
             "os": "arm64_sequoia",
-            "sha256": null
+            "sha256": "6843564a48490815432b0d77fcbaab7d669784f7df62c3f2b2713a3199f3cb99"
           },
           {
             "os": "arm64_sonoma",
-            "sha256": null
+            "sha256": "8cec7ff488d98b2be0ad1e597b8c89eef4208fbf7e7fac54304a9d0c3b3094ae"
           }
         ],
         "rebuild": 0,
