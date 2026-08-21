@@ -7719,11 +7719,11 @@
         "entries": [
           {
             "os": "arm64_sequoia",
-            "sha256": null
+            "sha256": "75299bfd0e37071181dd3f9bc990463e7f03846d2adbc610625aac501683f008"
           },
           {
             "os": "arm64_sonoma",
-            "sha256": null
+            "sha256": "f981c70f2771a015a050b74da0d2ae4115028c468629a22935aae03246684a24"
           }
         ],
         "rebuild": 0,
