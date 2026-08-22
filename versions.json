@@ -7822,11 +7822,11 @@
         "entries": [
           {
             "os": "arm64_sequoia",
-            "sha256": null
+            "sha256": "e62b62993fdac806a8b92b0cce1ae3777a0aa08a7956fe0b76f52afc9efee4d1"
           },
           {
             "os": "arm64_sonoma",
-            "sha256": null
+            "sha256": "dcfc2fd913cac0cbdb50f9c5f1ef2eb6d988f0d7b29ee125fb89f62332e4ab40"
           }
         ],
         "rebuild": 0,
