@@ -7925,11 +7925,11 @@
         "entries": [
           {
             "os": "arm64_sequoia",
-            "sha256": null
+            "sha256": "f88e38ba7dd493c8a8f7edb2048b7b70d2ae01ac457a2b2cc2deeef9bf80c33d"
           },
           {
             "os": "arm64_sonoma",
-            "sha256": null
+            "sha256": "b55b00139cebabe7c3f08816e52ecb9c795a2e844bc825c52c437bac3f62ae43"
           }
         ],
         "rebuild": 0,
