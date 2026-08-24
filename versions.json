@@ -8028,11 +8028,11 @@
         "entries": [
           {
             "os": "arm64_sequoia",
-            "sha256": null
+            "sha256": "2b4de8903e80b005369f1f43fbb9d00d52a82b968c759a261f00f484cec0b95d"
           },
           {
             "os": "arm64_sonoma",
-            "sha256": null
+            "sha256": "cf7c6ec5f030a1e262dfc52c09d2b596a6396e1889da3d51743397072437a8dc"
           }
         ],
         "rebuild": 0,
