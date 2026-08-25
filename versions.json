@@ -8131,11 +8131,11 @@
         "entries": [
           {
             "os": "arm64_sequoia",
-            "sha256": null
+            "sha256": "fbe015645e3743ec7d831749ddfcfd8e834c2ec071987783c65f6d263d5afe80"
           },
           {
             "os": "arm64_sonoma",
-            "sha256": null
+            "sha256": "87284e179cf313f7d565ca6d478681aa179231967d540662e41768058d02cca9"
           }
         ],
         "rebuild": 0,
