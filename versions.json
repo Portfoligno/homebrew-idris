@@ -8234,11 +8234,11 @@
         "entries": [
           {
             "os": "arm64_sequoia",
-            "sha256": null
+            "sha256": "b1d68b4db87c7789c3bf7799d771c77ccff762d4217c346f484907650614654a"
           },
           {
             "os": "arm64_sonoma",
-            "sha256": null
+            "sha256": "c5101440dff747e0a5d2c65ef3d5954cd80d11193ee8bf9da99aa73f8e504f07"
           }
         ],
         "rebuild": 0,
