@@ -8337,11 +8337,11 @@
         "entries": [
           {
             "os": "arm64_sequoia",
-            "sha256": null
+            "sha256": "a016d3ddea7e2aad8ce408564b06f622625c5e6f9e43fd598ddb430b6f7f68c6"
           },
           {
             "os": "arm64_sonoma",
-            "sha256": null
+            "sha256": "44368a460c8fdbcdfcba456307c64ef5b009bc2e6ab49e09f1d89ab75b654297"
           }
         ],
         "rebuild": 0,
