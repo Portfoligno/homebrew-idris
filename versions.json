@@ -8440,11 +8440,11 @@
         "entries": [
           {
             "os": "arm64_sequoia",
-            "sha256": null
+            "sha256": "9938131f7e928d662d777e1c43b03cc8b970ed9a48700ab622ab973206bd3cf4"
           },
           {
             "os": "arm64_sonoma",
-            "sha256": null
+            "sha256": "d560f96dcc92da63a384248f521d319390f3d995530a059ff7e4b5c7f946b3f4"
           }
         ],
         "rebuild": 0,
