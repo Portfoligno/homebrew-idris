@@ -8543,11 +8543,11 @@
         "entries": [
           {
             "os": "arm64_sequoia",
-            "sha256": null
+            "sha256": "02dddfe344e5c058b61e1410c52c234320cf9945d6b3ecb7c8c3c6035cad0dff"
           },
           {
             "os": "arm64_sonoma",
-            "sha256": null
+            "sha256": "9f4170c3e46155216a9e6e245c7ac24f92a133218d3279e639b278ff7c3221d8"
           }
         ],
         "rebuild": 0,
