@@ -8646,11 +8646,11 @@
         "entries": [
           {
             "os": "arm64_sequoia",
-            "sha256": null
+            "sha256": "1db34f6ad419d7dc12ef50194f5466d471ce96fc3ecf4f1c3d3389611a6ae3dd"
           },
           {
             "os": "arm64_sonoma",
-            "sha256": null
+            "sha256": "6c80ffc848125577e15d00d0480960afb45ff5c34b957bf05af97a4f055ac8f5"
           }
         ],
         "rebuild": 0,
