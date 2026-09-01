@@ -8749,11 +8749,11 @@
         "entries": [
           {
             "os": "arm64_sequoia",
-            "sha256": null
+            "sha256": "88d115fec91106ef11febbf60401dea490627b095fdf9090f2bbe7fa4b731a9c"
           },
           {
             "os": "arm64_sonoma",
-            "sha256": null
+            "sha256": "f627ec997cda8f305ef4d33fcd2d7973b78b1a4d0d04e4aea295384366318502"
           }
         ],
         "rebuild": 0,
