@@ -8852,11 +8852,11 @@
         "entries": [
           {
             "os": "arm64_sequoia",
-            "sha256": null
+            "sha256": "8955626527954e19cbd918f0d179e32b5501726b970b69646856aa8597b73e4c"
           },
           {
             "os": "arm64_sonoma",
-            "sha256": null
+            "sha256": "f1d0ad5109f985679719d6cfe49a21c857020799a01923ff21633190e7b4a159"
           }
         ],
         "rebuild": 0,
