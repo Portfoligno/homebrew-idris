@@ -75,6 +75,10 @@ rendering) and a single minimal POSIX `sh` launcher, `cmd/brew-idris2-pack-pin`
 - **`scripts/update-formula.hell`** — resolves the latest pack-db nightly, computes archive
   SHA256s and per-library `.ipkg` install order, binds the 11 env tokens, and renders
   `Formula/idris2-pack.rb` via `erb`. Also appends the new version's record to `versions.json`.
+  `resolve-pack-deps.hell` follows pack's reachable dependencies in the pinned source
+  archives, using `parse-ipkg.hell` to read package declarations. Each external package
+  becomes one resource in dependency order, with its exact collection-declared ipkg
+  path; compiler-provided libraries are excluded from that external closure.
 - **`scripts/idris2-pack-materialize.idr`** — the on-demand producer of dated
   `Formula/idris2-pack@<date>.rb` snapshots. Renders the SAME template with values COPIED out
   of `versions.json` (never recomputed), through the same `erb` engine. This is the logic

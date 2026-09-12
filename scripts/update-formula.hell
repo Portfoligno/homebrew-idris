@@ -47,125 +47,9 @@ jqQuery = \query -> \file -> do
     (Process.proc "jq" ["-r", query, file])
   IO.pure (Text.strip out)
 
--- Query .db[<key>].commit for a library key that may contain hyphens or
--- other special characters. The key is passed as a typed jq --arg, never
--- concatenated into the filter, so the filter stays static and jq's
--- bracket-indexing ([$key]) handles special characters correctly.
-jqLibCommit = \key -> \file -> do
-  out <- Main.readChecked (Text.concat ["jq .db[", key, "].commit"])
-    (Process.proc "jq" ["-r", "--arg", "key", key, ".db[$key].commit", file])
-  IO.pure (Text.strip out)
-
--- Query .db[<key>].ipkg for the exact repo-relative ipkg path. The key is
--- passed as a typed jq --arg so the filter stays static and bracket-indexing
--- handles hyphens/special characters correctly. This is the canonical,
--- pack-declared ipkg to install -- never a glob over the tarball -- so
--- auxiliary docs/profile/debug ipkgs can never be selected.
-jqLibIpkg = \key -> \file -> do
-  out <- Main.readChecked (Text.concat ["jq .db[", key, "].ipkg"])
-    (Process.proc "jq" ["-r", "--arg", "key", key, ".db[$key].ipkg", file])
-  IO.pure (Text.strip out)
-
 -- Build a GitHub archive URL.
 archiveUrl = \owner -> \repo -> \commit ->
   Text.concat ["https://github.com/", owner, "/", repo, "/archive/", commit, ".tar.gz"]
-
--- Assert that every key declared for one resource resolves to the same commit
--- in the collection, returning that shared commit. A resource is exactly one
--- repo @ one commit (one tarball download), so co-located keys must agree.
--- Published collections are post-resolution snapshots where one repo entry
--- yields one commit and several keys differ only in their ipkg path, so this
--- always holds for real data; the assertion is a defensive early-fail guard
--- catching a malformed collection or a key grouped under the wrong resource.
--- A missing key reads as "null", which differs from any resolved commit, so
--- the missing-key case is caught here too (only the primary needs a null check).
-assertSameCommit = \resourceName -> \keys -> \jsonFile -> do
-  primaryKey <- Maybe.maybe
-    (Exit.die (Text.concat ["Resource '", resourceName, "' declares no keys"]))
-    IO.pure
-    (Maybe.listToMaybe keys)
-
-  primaryCommit <- Main.jqLibCommit primaryKey jsonFile
-  if Eq.eq primaryCommit "null"
-    then Exit.die (Text.concat
-      ["Resource '", resourceName, "': primary key '", primaryKey, "' not found in collection"])
-    else IO.pure ()
-
-  -- Resolve every key into a typed (key, commit) pair.
-  pairs <- Monad.mapM
-    (\k -> do
-       c <- Main.jqLibCommit k jsonFile
-       IO.pure (k, c))
-    keys
-
-  -- A key is bad if its commit differs from the primary's.
-  let mismatches = List.filter
-        (\pair -> do
-           let (_k, c) = pair
-           Bool.not (Eq.eq c primaryCommit))
-        pairs
-
-  if Eq.eq (List.length mismatches) 0
-    then IO.pure primaryCommit
-    else do
-      let detail = List.map
-            (\pair -> do
-               let (k, c) = pair
-               Text.concat ["    ", k, " -> ", c])
-            mismatches
-      Exit.die (Text.concat
-        [ "Resource '", resourceName, "': keys do not all resolve to commit ", primaryCommit, ":\n"
-        , Text.intercalate "\n" detail
-        , "\nEvery key in one resource must share a commit (they share a single "
-        , "tarball download). The collection is malformed or these keys were "
-        , "grouped into the wrong resource."
-        ])
-
--- Assert that an ipkg path read from the collection is well-formed: it must
--- end with ".ipkg", must not be absolute, and must not contain "..". This is
--- a cheap point-of-use contract check; given the structural fix the value
--- already came from pack-db, but a corrupt/empty field still dies loudly here.
-assertIpkgPath = \key -> \ipkg -> do
-  let okSuffix = Text.isSuffixOf ".ipkg" ipkg
-  let notAbsolute = Bool.not (Text.isPrefixOf "/" ipkg)
-  let noDotDot = Bool.not (Text.isInfixOf ".." ipkg)
-  -- Hell here has no Bool.and; fold the three checks with nested ifs.
-  if okSuffix
-    then if notAbsolute
-      then if noDotDot
-        then IO.pure ()
-        else Exit.die (Text.concat ["Malformed ipkg path for '", key, "': ", ipkg])
-      else Exit.die (Text.concat ["Malformed ipkg path for '", key, "': ", ipkg])
-    else Exit.die (Text.concat ["Malformed ipkg path for '", key, "': ", ipkg])
-
--- Process one resource (a repo @ commit) that may supply several pack-db
--- entries. `keys` is the ordered list of db keys whose ipkgs to install from
--- this single tarball; their exact paths come from the collection's ipkg
--- field, never from globbing. All keys must resolve to the same commit (one
--- tarball) -- assertSameCommit fails early otherwise.
-processResource = \resourceName -> \owner -> \repo -> \keys -> \jsonFile -> do
-  commit <- Main.assertSameCommit resourceName keys jsonFile
-
-  let url = Main.archiveUrl owner repo commit
-  let tarFile = Text.concat ["/tmp/lib-", resourceName, ".tar.gz"]
-  Main.downloadFile url tarFile
-  sha <- Main.computeSha256 tarFile
-
-  -- Exact ipkg path per key, in the given order (no glob, no stripTopDir).
-  -- Each path is validated for well-formedness before use.
-  ipkgPaths <- Monad.mapM (\k -> do
-    p <- Main.jqLibIpkg k jsonFile
-    if Eq.eq p "null"
-      then Exit.die (Text.concat ["Library '", k, "' has no ipkg field in collection"])
-      else IO.pure ()
-    Main.assertIpkgPath k p
-    IO.pure p
-    ) keys
-
-  let installSteps = Text.intercalate ";" ipkgPaths
-  Text.putStrLn (Text.concat
-    ["  ", resourceName, ": ", commit, " (", Show.show (List.length ipkgPaths), " ipkg)"])
-  IO.pure (resourceName, url, sha, installSteps)
 
 -- Render ONE element template via erb with the trim flags (-T -) and a typed
 -- env, capturing stdout verbatim. The element vars are consed onto the full
@@ -316,32 +200,17 @@ main = do
   idris2Sha <- Main.computeSha256 "/tmp/idris2.tar.gz"
   Text.putStrLn (Text.concat ["idris2: ", idris2Commit])
 
-  -- Step 5: Resolve libraries (in dependency order). Each resource is a repo
-  -- @ one commit (one tarball); its key list is the ordered set of pack-db
-  -- entries to install from that tarball, using exact ipkg paths. This list
-  -- is pack's real dependency-ordered closure (11 packages across 9 repos),
-  -- verified against the live collection: pack -> {elab-util, filepath,
-  -- getopts, ilex-toml}, transitively pulling algebra, ref1, array,
-  -- bytestring, refined, ilex-core, ilex. `literal` is NOT in pack's closure
-  -- and is intentionally excluded. The idris2-ilex repo supplies three keys
-  -- (ilex-core -> ilex -> ilex-toml) in dependency order.
-  Text.putStrLn "Resolving libraries..."
-  let resources =
-        [ ("idris2-algebra",    "stefan-hoeck",    "idris2-algebra",    ["algebra"])
-        , ("idris2-ref1",       "stefan-hoeck",    "idris2-ref1",       ["ref1"])
-        , ("idris2-array",      "stefan-hoeck",    "idris2-array",      ["array"])
-        , ("idris2-bytestring", "stefan-hoeck",    "idris2-bytestring", ["bytestring"])
-        , ("idris2-elab-util",  "stefan-hoeck",    "idris2-elab-util",  ["elab-util"])
-        , ("idris2-getopts",    "idris-community", "idris2-getopts",    ["getopts"])
-        , ("idris2-filepath",   "stefan-hoeck",    "idris2-filepath",   ["filepath"])
-        , ("idris2-refined",    "stefan-hoeck",    "idris2-refined",    ["refined"])
-        , ("idris2-ilex",       "stefan-hoeck",    "idris2-ilex",       ["ilex-core", "ilex", "ilex-toml"])
-        ]
-
-  processed <- Monad.mapM (\spec -> do
-    let (rn, owner, repo, keys) = spec
-    Main.processResource rn owner repo keys "/tmp/collection.json"
-    ) resources
+  -- Discover the pinned package closure instead of maintaining a library list.
+  resolved <- Main.readChecked "resolve pack dependencies"
+    (Process.proc "./scripts/resolve-pack-deps.hell" ["/tmp/collection.json", "/tmp/pack.tar.gz"])
+  rows <- Main.readChecked "read ordered library resources"
+    (Text.setStdin resolved (Process.proc "jq" ["-r", ".[] | @tsv"]))
+  processed <- Monad.mapM (\row -> do
+    let fields = Text.splitOn "\t" row
+    if Eq.eq (List.length fields) 4 then IO.pure ()
+      else Exit.die "Malformed resolved library resource"
+    let field = \offset -> Maybe.maybe (Error.error "missing resolved field") Function.id (Maybe.listToMaybe (List.drop offset fields))
+    IO.pure (field 0, field 1, field 2, field 3)) (Text.lines rows)
 
   -- Step 6: Render resource and install blocks via the SHARED element templates
   -- (the same templates/*.rb.erb the Idris materializer renders), one erb

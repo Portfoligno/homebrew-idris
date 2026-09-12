@@ -1,0 +1,134 @@
+#!/usr/bin/env hell
+
+-- Project identity and dependency names; version satisfaction belongs to Idris.
+uncons = \text -> Maybe.maybe Maybe.Nothing (\(c, rest) -> Maybe.Just (c, Text.pack rest)) (List.uncons (Text.unpack text))
+takeWhile = \predicate -> \text -> Text.pack (List.takeWhile predicate (Text.unpack text))
+dropWhile = \predicate -> \text -> Text.pack (List.dropWhile predicate (Text.unpack text))
+andAll = \xs -> List.foldr (\x -> \rest -> if x then rest else Bool.False) Bool.True xs
+value = \(v, _kind, _line) -> v
+kind = \(_v, k, _line) -> k
+line = \(_v, _kind, n) -> n
+first = \xs -> Maybe.maybe ("", "end", 0) (\x -> x) (Maybe.listToMaybe xs)
+symbol = \token -> \v -> Main.andAll [Eq.eq (Main.kind token) "symbol", Eq.eq (Main.value token) v]
+digit = \c -> if Ord.lt c '0' then Bool.False else Bool.not (Ord.gt c '9')
+letter = \c -> if Ord.lt c 'A' then Bool.False else if Ord.gt c 'Z'
+  then if Ord.lt c 'a' then Bool.False else Bool.not (Ord.gt c 'z')
+  else Bool.True
+wordChar = \c -> if Main.letter c then Bool.True else if Main.digit c then Bool.True else List.elem c ['-', '_', '.']
+packageName = \v -> Main.andAll [Bool.not (Eq.eq v ""), Bool.not (Text.isPrefixOf "-" v), Text.all (\c -> if Main.wordChar c then Bool.not (Eq.eq c '.') else Bool.False) v]
+failAt = \source -> \token -> \message -> Exit.die (Text.concat [source, ":", Show.show (Main.line token), ": ", message])
+nextLine = \n -> \c -> if Eq.eq c '\n' then Int.plus n 1 else n
+
+blockComment = \source -> Function.fix (\go -> \depth -> \n -> \text ->
+  if Text.isPrefixOf "{-" text then go (Int.plus depth 1) n (Text.drop (Text.length "{-") text)
+  else if Text.isPrefixOf "-}" text then
+    if Eq.eq depth 1 then IO.pure (n, Text.drop (Text.length "-}") text)
+    else go (Int.subtract 1 depth) n (Text.drop (Text.length "-}") text)
+  else Maybe.maybe (Exit.die (Text.concat [source, ": unterminated block comment"]))
+    (\(c, rest) -> go depth (Main.nextLine n c) rest) (Main.uncons text))
+
+quoted = \source -> Function.fix (\go -> \n -> \escaped -> \out -> \text ->
+  Maybe.maybe (Exit.die (Text.concat [source, ": unterminated string"]))
+    (\(c, rest) -> if escaped then
+        if List.elem c ['"', '\\', 'n', 'r', 't', 'b', 'f', 'v', 'a', '0']
+          then go (Main.nextLine n c) Bool.False (Text.concat [out, Text.pack [c]]) rest
+          else Exit.die (Text.concat [source, ": unsupported string escape"])
+      else if Eq.eq c '\\' then go n Bool.True out rest
+      else if Eq.eq c '"' then IO.pure (out, n, rest)
+      else go (Main.nextLine n c) Bool.False (Text.concat [out, Text.pack [c]]) rest)
+    (Main.uncons text))
+
+lex = \source -> Function.fix (\go -> \n -> \text ->
+  if Text.isPrefixOf "--" text then go n (Main.dropWhile (\c -> Bool.not (Eq.eq c '\n')) text)
+  else if Text.isPrefixOf "{-" text then do
+    (afterLine, rest) <- Main.blockComment source 1 n (Text.drop (Text.length "{-") text)
+    go afterLine rest
+  else Maybe.maybe (IO.pure []) (\(c, rest) ->
+    if List.elem c [' ', '\t', '\r', '\n'] then go (Main.nextLine n c) rest
+    else if Eq.eq c '"' then do
+      (v, afterLine, remaining) <- Main.quoted source n Bool.False "" rest
+      tail <- go afterLine remaining
+      IO.pure (List.cons (v, "string", n) tail)
+    else if Main.wordChar c then do
+      let word = Main.takeWhile Main.wordChar text
+      tail <- go n (Text.drop (Text.length word) text)
+      IO.pure (List.cons (word, "word", n) tail)
+    else do
+      let paired = List.find (\marker -> Text.isPrefixOf marker text) ["<=", ">=", "==", "&&"]
+      let symbol = Maybe.maybe (Text.pack [c]) (\x -> x) paired
+      tail <- go n (Text.drop (Text.length symbol) text)
+      IO.pure (List.cons (symbol, "symbol", n) tail)) (Main.uncons text))
+
+fieldStart = \tokens -> Main.andAll
+  [Eq.eq (Main.kind (Main.first tokens)) "word", Main.symbol (Main.first (List.drop 1 tokens)) "="]
+version = \token -> Main.andAll
+  [Eq.eq (Main.kind token) "word", List.all (\part -> Main.andAll [Bool.not (Eq.eq part ""), Text.all Main.digit part]) (Text.splitOn "." (Main.value token))]
+bound = \source -> \tokens -> do
+  let operator = Main.first tokens
+  let number = Main.first (List.drop 1 tokens)
+  if Main.andAll [Eq.eq (Main.kind operator) "symbol", List.elem (Main.value operator) ["<", "<=", ">", ">=", "=="], Main.version number]
+    then IO.pure (List.drop 2 tokens)
+    else Main.failAt source operator "Malformed dependency version bound"
+
+dependencies = \source -> Function.fix (\go -> \tokens -> do
+  let token = Main.first tokens
+  if Main.andAll [Eq.eq (Main.kind token) "word", Main.packageName (Main.value token), Bool.not (Main.fieldStart tokens)]
+    then IO.pure () else Main.failAt source token "Expected dependency name"
+  let afterName = List.drop 1 tokens
+  remaining <- if List.elem (Main.value (Main.first afterName)) ["<", "<=", ">", ">=", "=="]
+    then do
+      afterFirst <- Main.bound source afterName
+      if Main.symbol (Main.first afterFirst) "&&"
+        then Main.bound source (List.drop 1 afterFirst) else IO.pure afterFirst
+    else IO.pure afterName
+  if Main.symbol (Main.first remaining) "," then do
+    (tail, rest) <- go (List.drop 1 remaining)
+    IO.pure (List.cons (Main.value token) tail, rest)
+  else if Main.fieldStart remaining then IO.pure ([Main.value token], remaining)
+  else if Eq.eq (List.length remaining) 0 then IO.pure ([Main.value token], remaining)
+  else Main.failAt source (Main.first remaining) "Unsupported dependency expression")
+
+skipValue = \source -> Function.fix (\go -> \tokens ->
+  if Main.fieldStart tokens then IO.pure tokens
+  else if Eq.eq (List.length tokens) 0 then IO.pure []
+  else if Main.andAll [Eq.eq (Main.kind (Main.first tokens)) "word", List.elem (Main.value (Main.first tokens)) ["depends", "opts", "options", "package"]]
+    then Main.failAt source (Main.first tokens) "Malformed or ambiguous package field"
+    else go (List.drop 1 tokens))
+
+fields = \source -> Function.fix (\go -> \seen -> \deps -> \tokens ->
+  if Eq.eq (List.length tokens) 0 then IO.pure deps
+  else if Main.fieldStart tokens then do
+    let field = Main.first tokens
+    let values = List.drop 2 tokens
+    if Eq.eq (Main.value field) "depends" then do
+      if seen then Main.failAt source field "Repeated depends fields are unsupported" else IO.pure ()
+      (names, remaining) <- Main.dependencies source values
+      go Bool.True names remaining
+    else if List.elem (Main.value field) ["opts", "options"] then do
+      let option = Main.first values
+      if Main.andAll [Eq.eq (Main.kind option) "string", List.all (\v -> List.elem v ["--ignore-missing-ipkg", "-Wno-shadowing", "--no-prelude"]) (Text.words (Main.value option))]
+        then go seen deps (List.drop 1 values)
+        else Main.failAt source option "Unsupported dependency-affecting package options"
+    else do
+      remaining <- Main.skipValue source values
+      go seen deps remaining
+  else if Eq.eq (Main.value (Main.first tokens)) "langversion"
+    then do
+      remaining <- Main.skipValue source (List.drop 1 tokens)
+      go seen deps remaining
+  else Main.failAt source (Main.first tokens) "Ambiguous package field boundary")
+
+main = do
+  args <- Environment.getArgs
+  source <- Maybe.maybe (Exit.die "Usage: parse-ipkg.hell <ipkg-file>") IO.pure (Maybe.listToMaybe args)
+  if Eq.eq (List.length args) 1 then IO.pure () else Exit.die "Usage: parse-ipkg.hell <ipkg-file>"
+  contents <- Text.readFile source
+  tokens <- Main.lex source 1 contents
+  let name = Main.first (List.drop 1 tokens)
+  if Main.andAll [Eq.eq (Main.kind (Main.first tokens)) "word", Eq.eq (Main.value (Main.first tokens)) "package", Eq.eq (Main.kind name) "word", Main.packageName (Main.value name)]
+    then IO.pure () else Main.failAt source name "Malformed package declaration"
+  deps <- Main.fields source Bool.False [] (List.drop 2 tokens)
+  (status, out, err) <- Text.readProcess (Process.proc "jq"
+    (["-cn", "--arg", "name", Main.value name, "--arg", "source", source,
+      "{name:$name,source:$source,dependencies:$ARGS.positional}", "--args", "--"] <> deps))
+  Exit.exitCode (Text.putStr out) (\_ -> Exit.die err) status

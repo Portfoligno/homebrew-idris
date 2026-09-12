@@ -1,0 +1,112 @@
+#!/usr/bin/env hell
+
+-- Resolve only pack's reachable package metadata from the selected collection.
+read = \label -> \proc -> do
+  (status, out, err) <- Text.readProcess proc
+  Exit.exitCode (IO.pure out) (\_ -> Exit.die (Text.concat [label, ": ", err])) status
+run = \label -> \proc -> do
+  status <- Process.runProcess proc
+  Exit.exitCode (IO.pure ()) (\_ -> Exit.die label) status
+at = \xs -> \n -> Maybe.maybe "" Function.id (Maybe.listToMaybe (List.drop n xs))
+join = \xs -> Text.intercalate "/" xs
+json = \query -> \input -> Text.strip <$> Main.read "package metadata"
+  (Text.setStdin input (Process.proc "jq" ["-cr", query]))
+identifier = \value -> if List.elem value ["", ".", ".."] then Bool.False
+  else Text.all (\c -> List.elem c (Text.unpack "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_.")) value
+andAll = \xs -> List.foldr (\x -> \rest -> if x then rest else Bool.False) Bool.True xs
+
+archive = \work -> \url -> \commit -> do
+  repository <- Maybe.maybe (Exit.die "Expected a GitHub package source") IO.pure (Text.stripPrefix "https://github.com/" url)
+  let parts = Text.splitOn "/" repository
+  if Main.andAll [Eq.eq (List.length parts) 2, List.all Main.identifier parts,
+    Bool.not (Eq.eq commit ""), Text.all (\c -> List.elem c (Text.unpack "0123456789abcdef")) commit]
+    then IO.pure () else Exit.die "Invalid package source identity"
+  let directory = Main.join ([work] <> parts <> [commit])
+  let file = Main.join [directory, "source.tar.gz"]
+  present <- Directory.doesFileExist file
+  if present then IO.pure () else do
+    Main.run "create source directory" (Process.proc "mkdir" ["-p", directory])
+    config <- Main.read "serialize package archive URL" (Process.proc "jq"
+      ["-nr", "--arg", "url", url, "--arg", "commit", commit,
+       "\"url = \" + (($url + \"/archive/\" + $commit + \".tar.gz\") | tojson)"])
+    let configPath = Main.join [directory, "curl.config"]
+    Text.writeFile configPath config
+    Main.run "download package archive" (Process.proc "curl"
+      ["--fail", "--silent", "--show-error", "--location", "--config", configPath, "--output", file])
+  IO.pure file
+
+metadata = \work -> \archive -> \path -> do
+  if Main.andAll [List.all Main.identifier (Text.splitOn "/" path), Text.isSuffixOf ".ipkg" path]
+    then IO.pure () else Exit.die (Text.concat ["Invalid package path: ", path])
+  listing <- Main.read "list source archive" (Process.proc "tar" ["-tzf", archive])
+  let members = Text.lines listing
+  let root = Main.at (Text.splitOn "/" (Main.at members 0)) 0
+  let member = Main.join [root, path]
+  if Eq.eq (List.length (List.filter (\name -> Eq.eq name member) members)) 1
+    then IO.pure () else Exit.die (Text.concat ["Missing or ambiguous package metadata: ", path])
+  kind <- Main.read "inspect package metadata" (Process.proc "tar" ["-tvzf", archive, "--", member])
+  if Text.isPrefixOf "-" kind then IO.pure () else Exit.die "Package metadata is not a regular file"
+  source <- Main.read "read package metadata" (Process.proc "tar" ["-xOzf", archive, "--", member])
+  let temporary = Main.join [work, "package.ipkg"]
+  Text.writeFile temporary source
+  Main.read "parse package metadata" (Process.proc "./scripts/parse-ipkg.hell" [temporary])
+
+-- Supplied by the existing compiler source-library and API installation steps.
+providers = ["prelude", "base", "linear", "network", "contrib", "test", "idris2"]
+data Node = Node { key :: Text, dependencies :: [Text], resource :: Text }
+key = \node -> Record.get @"key" node
+deps = \node -> Record.get @"dependencies" node
+resource = \node -> Record.get @"resource" node
+
+discover = \collection -> \rootArchive -> \work -> Function.fix (\visit -> \path -> \key -> \done ->
+  if List.elem key path then Exit.die (Text.concat ["Dependency cycle: ", Text.intercalate " -> " (path <> [key])])
+  else if List.any (\node -> Eq.eq (Main.key node) key) done then IO.pure done
+  else do
+    selected <- Main.read "select pinned package" (Text.setStdin collection (Process.proc "jq"
+      ["-c", "--arg", "key", key,
+       "if $key == \"pack\" then (.pack // .db.pack) | . + {ipkg:(.ipkg // \"pack.ipkg\")} else .db[$key] end"]))
+    if Eq.eq (Text.strip selected) "null" then Exit.die (Text.concat ["Missing package: ", Text.intercalate " -> " (path <> [key])]) else IO.pure ()
+    ipkg <- Main.json ".ipkg" selected
+    url <- Main.json ".url" selected
+    commit <- Main.json ".commit" selected
+    source <- if Eq.eq key "pack" then IO.pure rootArchive else do
+      sourceType <- Main.json ".type" selected
+      if Eq.eq sourceType "github" then Main.archive work url commit else Exit.die (Text.concat ["Unsupported package source: ", key])
+    parsed <- Main.metadata work source ipkg
+    name <- Main.json ".name" parsed
+    if Eq.eq name key then IO.pure () else Exit.die (Text.concat ["Package identity mismatch: ", key, " selects ", name])
+    dependencyText <- Main.json ".dependencies[]" parsed
+    let dependencies = Text.lines dependencyText
+    digest <- Main.read "hash package source" (Process.proc "shasum" ["-a", "256", source])
+    row <- Main.read "serialize library resource" (Process.proc "jq"
+      ["-cn", "--arg", "key", key, "--arg", "url", url, "--arg", "commit", commit,
+       "--arg", "sha", Main.at (Text.words digest) 0, "--arg", "ipkg", ipkg,
+       "[ (\"pack-dep-\" + $key), ($url + \"/archive/\" + $commit + \".tar.gz\"), $sha, $ipkg ]"])
+    reached <- List.foldr (\dependency -> \rest -> do
+      state <- rest
+      if List.elem dependency Main.providers then IO.pure state
+      else visit (path <> [key]) dependency state) (IO.pure done) (List.reverse dependencies)
+    IO.pure (List.cons (Main.Node {key=key, dependencies=dependencies, resource=row}) reached))
+
+ordered = \nodes -> Function.fix (\go -> \completed -> \remaining ->
+  if Eq.eq (List.length remaining) 0 then IO.pure [] else do
+    let ready = List.filter (\node -> List.all (\dependency ->
+          if List.elem dependency Main.providers then Bool.True else List.elem dependency completed) (Main.deps node)) remaining
+    let keys = List.sort (List.map Main.key ready)
+    selected <- Maybe.maybe (Exit.die "No dependency-ready package") IO.pure (Maybe.listToMaybe keys)
+    node <- Maybe.maybe (Exit.die "Missing dependency-ready package") IO.pure (List.find (\item -> Eq.eq (Main.key item) selected) ready)
+    rest <- go (List.cons selected completed) (List.filter (\item -> Bool.not (Eq.eq (Main.key item) selected)) remaining)
+    IO.pure (List.cons node rest)) [] nodes
+
+main = do
+  args <- Environment.getArgs
+  if Eq.eq (List.length args) 2 then IO.pure () else Exit.die "Usage: resolve-pack-deps.hell <collection-json> <pack-archive>"
+  collection <- Text.readFile (Main.at args 0)
+  work <- Text.strip <$> Main.read "create source workspace" (Process.proc "mktemp" ["-d"])
+  nodes <- Main.discover collection (Main.at args 1) work [] "pack" []
+  sorted <- Main.ordered nodes
+  let libraries = List.filter (\node -> Bool.not (Eq.eq (Main.key node) "pack")) sorted
+  result <- Main.read "serialize ordered libraries" (Process.proc "jq"
+    (["-cn", "$ARGS.positional", "--jsonargs"] <> List.map Main.resource libraries))
+  Main.run "remove source workspace" (Process.proc "rm" ["-r", work])
+  Text.putStr result
