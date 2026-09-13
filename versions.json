@@ -9191,11 +9191,11 @@
         "entries": [
           {
             "os": "arm64_sequoia",
-            "sha256": null
+            "sha256": "7eef1d93b0f78e69cfd321f9987e29b2c22f52495cca5d4dc3d0e195177701c7"
           },
           {
             "os": "arm64_sonoma",
-            "sha256": null
+            "sha256": "6c2e5d4d4097bdf184bc08897c80846ac524a1ae2fdacf375ac27350c0943349"
           }
         ],
         "rebuild": 0,
