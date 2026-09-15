@@ -9324,11 +9324,11 @@
         "entries": [
           {
             "os": "arm64_sequoia",
-            "sha256": null
+            "sha256": "96ccde55888027f194b87dded76677148965a4c4375e4e9845940f1b1fdafe9c"
           },
           {
             "os": "arm64_sonoma",
-            "sha256": null
+            "sha256": "5e01a9066bea2d55fb460dcf7c5faa3361dc154f0fac2d9821986af9273dd677"
           }
         ],
         "rebuild": 0,
