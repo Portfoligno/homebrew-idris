@@ -9590,11 +9590,11 @@
         "entries": [
           {
             "os": "arm64_sequoia",
-            "sha256": null
+            "sha256": "2818d1ca099f6c15f54ad4af89239e0f44e8db1e408baf2f89222257add53cbf"
           },
           {
             "os": "arm64_sonoma",
-            "sha256": null
+            "sha256": "84b85fd2f882ac799269cb45782271cb5b88f271d6fa72577ad925d09f78ec42"
           }
         ],
         "rebuild": 0,
