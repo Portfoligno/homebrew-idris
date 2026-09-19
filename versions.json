@@ -9723,11 +9723,11 @@
         "entries": [
           {
             "os": "arm64_sequoia",
-            "sha256": null
+            "sha256": "769826e88b127fb83021c16f549bedbaffd4b27930ee043bedeaec910c2ba413"
           },
           {
             "os": "arm64_sonoma",
-            "sha256": null
+            "sha256": "1d9ee2dce3bc975f16a8936097c6db6a6524521cd3c7c4139eded1bc0d88322a"
           }
         ],
         "rebuild": 0,
