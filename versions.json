@@ -9856,11 +9856,11 @@
         "entries": [
           {
             "os": "arm64_sequoia",
-            "sha256": null
+            "sha256": "1b366c2e7503aa067264c2322a2d8489caad246b02f4551a90340954ba833ef6"
           },
           {
             "os": "arm64_sonoma",
-            "sha256": null
+            "sha256": "089f660dbf23daeddcf455d0e68caeb99712f130c8a6deffdd0e36864751f6b4"
           }
         ],
         "rebuild": 0,
