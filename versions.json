@@ -10122,11 +10122,11 @@
         "entries": [
           {
             "os": "arm64_sequoia",
-            "sha256": null
+            "sha256": "b35466987f45e57c4c582e7bc1f38fd2824f9eab756e02a3ff34072023051ec9"
           },
           {
             "os": "arm64_sonoma",
-            "sha256": null
+            "sha256": "c1dc232fde105ecf6202ed4c99b5bce3778d3e836d8a84fb16fa5663f49c90a8"
           }
         ],
         "rebuild": 0,
