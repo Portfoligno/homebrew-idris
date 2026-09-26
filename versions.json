@@ -10255,11 +10255,11 @@
         "entries": [
           {
             "os": "arm64_sequoia",
-            "sha256": null
+            "sha256": "d6dd678ed76e2de0c60964194d831b5934542075ab43e73e0d47da08a6d3fcdb"
           },
           {
             "os": "arm64_sonoma",
-            "sha256": null
+            "sha256": "1a5a569e6c0dea44d47d045dece9281c403a941ab3a3b5f64819895f6fa17b03"
           }
         ],
         "rebuild": 0,
