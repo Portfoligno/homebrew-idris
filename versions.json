@@ -10521,11 +10521,11 @@
         "entries": [
           {
             "os": "arm64_sequoia",
-            "sha256": null
+            "sha256": "60660c33344d1424ac7ee55920a892e6e8ddaedb8d7826856e900d04e2c16288"
           },
           {
             "os": "arm64_sonoma",
-            "sha256": null
+            "sha256": "f6d78fe8fd0e0c7dd61906eaef6044b57821d30b90ee052837c635b2be0ee35f"
           }
         ],
         "rebuild": 0,
