@@ -10654,11 +10654,11 @@
         "entries": [
           {
             "os": "arm64_sequoia",
-            "sha256": null
+            "sha256": "276663b97a197103a2b2d2a5ffb521c86606620fa0d4085a63f889ec14870b89"
           },
           {
             "os": "arm64_sonoma",
-            "sha256": null
+            "sha256": "aa6835113fd329423d9b38279fdf7a4babe488a93f47111b5ae14a8bc3a28650"
           }
         ],
         "rebuild": 0,
