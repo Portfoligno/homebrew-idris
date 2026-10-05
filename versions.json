@@ -11319,11 +11319,11 @@
         "entries": [
           {
             "os": "arm64_sequoia",
-            "sha256": null
+            "sha256": "6bcddafa740f59122f582f8d9feff6be39a53b355aa62366928b5d0e2475c1db"
           },
           {
             "os": "arm64_sonoma",
-            "sha256": null
+            "sha256": "d16831e6941101e87e8dc9fc6b549c8ba0ec940e733d8f83fc42a42fb5439649"
           }
         ],
         "rebuild": 0,
