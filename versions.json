@@ -11718,11 +11718,11 @@
         "entries": [
           {
             "os": "arm64_sequoia",
-            "sha256": null
+            "sha256": "4411a81e8809ba90f6e2173730bdfeddcc8d20496bad478d3ff602e40f6a155e"
           },
           {
             "os": "arm64_sonoma",
-            "sha256": null
+            "sha256": "a1792d579d525f0babd8db1ef771cbc84ee9630c194cdc548ff872b01b74f2d0"
           }
         ],
         "rebuild": 0,
