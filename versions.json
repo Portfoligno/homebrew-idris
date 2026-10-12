@@ -12117,11 +12117,11 @@
         "entries": [
           {
             "os": "arm64_sequoia",
-            "sha256": null
+            "sha256": "12f6b3fd0061a2fb9d56d3382bb940e58823c24938fc1013c5a5b866bca19bb5"
           },
           {
             "os": "arm64_sonoma",
-            "sha256": null
+            "sha256": "7bc5907caa4a86d5f08dd5c5cb3e0e9e0cf9731dfa68042ca8a495f99677cb81"
           }
         ],
         "rebuild": 0,
