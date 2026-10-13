@@ -12250,11 +12250,11 @@
         "entries": [
           {
             "os": "arm64_sequoia",
-            "sha256": null
+            "sha256": "3b4fbe2bdbc9048ae450bb6610804840243bf3de82a874e2f7eb710b9bfd0b2d"
           },
           {
             "os": "arm64_sonoma",
-            "sha256": null
+            "sha256": "3cf17cd135907266a086d3c379be4fdfad54194aa5841a35dc1cc3746ce62db9"
           }
         ],
         "rebuild": 0,
