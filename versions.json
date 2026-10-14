@@ -12383,11 +12383,11 @@
         "entries": [
           {
             "os": "arm64_sequoia",
-            "sha256": null
+            "sha256": "d6dd2396f94a5c2b315b30d259a27832a4c0b8f7844ac4927ea1c951aaf631c8"
           },
           {
             "os": "arm64_sonoma",
-            "sha256": null
+            "sha256": "2155c4833967c6da4f7e2ae54e525440706fb9bbf4c6c4cb7397665953f5ce81"
           }
         ],
         "rebuild": 0,
