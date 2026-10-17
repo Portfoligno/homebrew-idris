@@ -12516,11 +12516,11 @@
         "entries": [
           {
             "os": "arm64_sequoia",
-            "sha256": null
+            "sha256": "5e61859fc706c0b1207b2536532d2bb6415033173bb67bc6ab6aabfaff162295"
           },
           {
             "os": "arm64_sonoma",
-            "sha256": null
+            "sha256": "c90b175904c0ab85d5788690f3f8c3f43aa4c9b6915ce89acfe2b3deace187c5"
           }
         ],
         "rebuild": 0,
