@@ -13048,11 +13048,11 @@
         "entries": [
           {
             "os": "arm64_sequoia",
-            "sha256": null
+            "sha256": "70da41047b60ce5db495f9dd14dfcab2adb0d050416cb68b9954743d19a018ef"
           },
           {
             "os": "arm64_sonoma",
-            "sha256": null
+            "sha256": "e343eb79af334a75c4e6613ff73620c279c9b36d10e57e464b762736c77b436e"
           }
         ],
         "rebuild": 0,
