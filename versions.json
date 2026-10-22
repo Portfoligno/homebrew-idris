@@ -13181,11 +13181,11 @@
         "entries": [
           {
             "os": "arm64_sequoia",
-            "sha256": null
+            "sha256": "96e86f6fee59364f4831671c7999b29594cfe89ea0872d8e91d10546ad845c73"
           },
           {
             "os": "arm64_sonoma",
-            "sha256": null
+            "sha256": "4934e9ff41e155aeeacf5f6a44bf70e47c727b4d1dc2afec732c5772535f0e39"
           }
         ],
         "rebuild": 0,
