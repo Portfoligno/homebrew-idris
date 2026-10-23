@@ -13314,11 +13314,11 @@
         "entries": [
           {
             "os": "arm64_sequoia",
-            "sha256": null
+            "sha256": "271f85ab39241874a01e89a4c83c580e5ddcc3fa2d20a17916654421d2e5d9c8"
           },
           {
             "os": "arm64_sonoma",
-            "sha256": null
+            "sha256": "ab9dda658cf4b4270b240662da31298c781af8308d86e14a00558014ff068e79"
           }
         ],
         "rebuild": 0,
