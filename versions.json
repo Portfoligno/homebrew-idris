@@ -13447,11 +13447,11 @@
         "entries": [
           {
             "os": "arm64_sequoia",
-            "sha256": null
+            "sha256": "b377db4e6250318ff2a2ff06eda9ac34a1ee2c63bd62fbd268b6d3ca53185124"
           },
           {
             "os": "arm64_sonoma",
-            "sha256": null
+            "sha256": "d7ced7691bbd3c642107257eac435ba8da862ea58e57269237cf5d03c9dfd9f3"
           }
         ],
         "rebuild": 0,
