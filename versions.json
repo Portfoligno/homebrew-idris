@@ -13713,11 +13713,11 @@
         "entries": [
           {
             "os": "arm64_sequoia",
-            "sha256": null
+            "sha256": "210ccd52d605bc82badb32fa3d9f96e1b80c6b343dc0631217ba9d6840564c48"
           },
           {
             "os": "arm64_sonoma",
-            "sha256": null
+            "sha256": "fdb27660cc2e9ef06fc2d708ba6575d00dda14e1c75b04feebc64092cba3354b"
           }
         ],
         "rebuild": 0,
