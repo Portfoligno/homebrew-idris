@@ -14112,11 +14112,11 @@
         "entries": [
           {
             "os": "arm64_sequoia",
-            "sha256": null
+            "sha256": "b0ed8f4f2d79770a03af45f6287da150f541c5d71a216b4ca9e47ad679de520c"
           },
           {
             "os": "arm64_sonoma",
-            "sha256": null
+            "sha256": "387bcb69c259108b5c851eecdb6c183f1252df39bfabd0a63dc500d5dd2ce099"
           }
         ],
         "rebuild": 0,
